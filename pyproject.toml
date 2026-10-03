@@ -1,0 +1,27 @@
+[project]
+name = "thinking-machines"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Kilian Achterberg", email = "kilianacht@gmx.de" }
+]
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+thinking-machines = "thinking_machines:main"
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.10",
+]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "basic"
