@@ -1,5 +1,5 @@
 # Thinking_Machines
 
 ## Usage
-running:
-`uv run active_inference.py`
+run with:
+`uv run -m thinking_machines`
