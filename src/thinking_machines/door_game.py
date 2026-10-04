@@ -1,5 +1,6 @@
 import random
 
+
 class DoorGame:
     move: int
     light_on: bool
