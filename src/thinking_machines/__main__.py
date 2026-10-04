@@ -268,12 +268,12 @@ if __name__ == "__main__":
             action_history[-1] = all_action_sequences[chosen_policy][amount_of_moves]
             # action_history[-1] = random.randint(0, 1)
 
-            print("")
+            print()
             print(delayed_obs, "<--- Past observations")
             print(delayed_act, all_action_sequences[chosen_policy], "<--- Actions: past & future")
-            print("")
-            print("")
-            print("")
+            print()
+            print()
+            print()
 
             observation_history = torch.roll(observation_history, -1)
             observation_history[-1] = door_game.play_turn(should_light_be_on_action=bool(action_history[-1]))
