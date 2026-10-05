@@ -1,6 +1,5 @@
-[package]
-name = "Thinking_Machines"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = ["crates/board_game_engine"
+, "crates/board_game_pyo3_bindings"]
+resolver = "3"
 
-[dependencies]
