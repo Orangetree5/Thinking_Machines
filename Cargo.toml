@@ -1,5 +1,6 @@
 [workspace]
 members = ["crates/board_game_engine"
 , "crates/board_game_pyo3_bindings"]
+
 resolver = "3"
 

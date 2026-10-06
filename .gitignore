@@ -1,13 +1,56 @@
+# ==============================================================================
+# Rust / Cargo
+# ==============================================================================
+/target/
+**/*.rs.bk
+
+# ==============================================================================
+# PyO3 & Maturin In-Tree Build Artifacts
+# ==============================================================================
+# Dynamic C-extension libraries placed in src/ during `maturin develop`
+*.so
+*.dylib
+*.pyd
+
+# Auto-generated pyo3-stub-gen type stubs
+src/**/_rust.pyi
+src/**/_rust/
+
+# Build distributions
+/dist/
+/wheels/
+*.whl
+
+# ==============================================================================
+# Python & Tooling Caches
+# ==============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Testing & Linting Caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.coverage
+htmlcov/
+
+# ==============================================================================
+# Environments (uv / venv)
+# ==============================================================================
 .venv/
+venv/
+env/
+ENV/
 
-
-# Added by cargo
-
-/target
-
-
-# Added by cargo
-#
-# already existing elements were commented out
-
-#/target
+# ==============================================================================
+# IDEs & System Files
+# ==============================================================================
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.DS_Store
+Thumbs.db

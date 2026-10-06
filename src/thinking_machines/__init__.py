@@ -1,3 +1,7 @@
+from ._rust import BoardGame
+
+__all__ = ["BoardGame"]
+
 def main() -> None:
     print("Hello from thinking-machines!")
     print("Uhh biste am programmieren?")

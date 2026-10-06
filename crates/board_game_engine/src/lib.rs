@@ -1,3 +1,5 @@
+use rand::{RngExt, rngs::ThreadRng};
+
 pub struct BoardGame {
     width: u32,
     height: u32,
@@ -7,7 +9,7 @@ pub struct BoardGame {
 }
 
 impl BoardGame {
-    pub fn new(
+    fn new(
         width: u32,
         height: u32,
         coin_positions: Vec<Position>,
@@ -19,6 +21,25 @@ impl BoardGame {
             coin_positions,
             player_position,
         }
+    }
+
+    pub fn new_random(width: u32, height: u32, number_of_coins: u32) -> Self {
+        let mut rng = rand::rng();
+
+        let mut positions = Vec::new();
+        for _ in 0..number_of_coins + 1 {
+            let mut position = Self::generate_pot_position(&mut rng, width, height);
+
+            while positions.contains(&position) {
+                position = Self::generate_pot_position(&mut rng, width, height);
+            }
+
+            positions.push(position);
+        }
+
+        let player_position = positions.pop().unwrap();
+
+        Self::new(width, height, positions, player_position)
     }
 
     pub fn play_turn(&mut self, player_move: PlayerMove) -> Option<TurnResult> {
@@ -34,12 +55,35 @@ impl BoardGame {
         if let Some(index) = index_coin_to_remove {
             self.coin_positions.remove(index);
 
+            self.coin_positions.push(self.unique_random_position());
+
             return Some(TurnResult::CoinFound);
         }
 
         let distance: Option<u32> = self.distance_to_coin_in_moved_direction(player_move);
 
         Some(TurnResult::DistanceToCoinInMovingDirection(distance))
+    }
+
+    fn unique_random_position(&self) -> Position {
+        let mut rng = rand::rng();
+
+        let mut pot_position = Self::generate_pot_position(&mut rng, self.width, self.height);
+        while self.coin_positions.contains(&pot_position) || pot_position == self.player_position {
+            pot_position = Self::generate_pot_position(&mut rng, self.width, self.height);
+        }
+
+        pot_position
+    }
+
+    fn generate_pot_position(rng: &mut ThreadRng, width: u32, height: u32) -> Position {
+        let rand_x = rng.random_range(0..width);
+        let rand_y = rng.random_range(0..height);
+
+        Position {
+            x: rand_x,
+            y: rand_y,
+        }
     }
 
     fn distance_to_coin_in_moved_direction(&self, player_move: PlayerMove) -> Option<u32> {
@@ -55,7 +99,6 @@ impl BoardGame {
                     }
                     PlayerMove::Down => {
                         for (distance, y) in (0..=self.player_position.y).rev().enumerate() {
-                            println!("{distance}");
                             if y == coin_position.y {
                                 return Some(distance as u32);
                             }
@@ -155,9 +198,9 @@ impl std::fmt::Display for BoardGame {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Position {
-    x: u32,
-    y: u32,
+struct Position {
+    pub x: u32,
+    pub y: u32,
 }
 
 pub enum PlayerMove {
@@ -190,10 +233,10 @@ mod tests {
         println!("{}", board_game);
 
         match result {
-            TurnResult::CoinFound => panic!("Shouldnt have found coin"),
             TurnResult::DistanceToCoinInMovingDirection(distance) => {
                 assert!(distance.is_none())
             }
+            _ => panic!("Shouldnt have found coin"),
         }
     }
 

@@ -1,6 +1,18 @@
 [package]
-name = "board_game_pyo3_bindings"
+name = "board_game_py"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "generate_stubs"
+path = "src/bin/generate_stubs.rs"
+
+[lib]
+name = "_rust"
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
+board_game_engine = {path = "../../crates/board_game_engine"}
+pyo3 = "0.29.3"
+pyo3-stub-gen = "0.23.1"
+pyo3-stub-gen-derive = "0.23.1"
