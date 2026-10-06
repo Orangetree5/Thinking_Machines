@@ -2,7 +2,7 @@ use board_game_engine::{PlayerMove, TurnResult};
 use pyo3::prelude::*;
 
 use pyo3_stub_gen::{
-    define_stub_info_gatherer, derive::gen_stub_pyfunction, derive::gen_stub_pymethods,
+    derive::gen_stub_pymethods,
 };
 use pyo3_stub_gen_derive::gen_stub_pyclass;
 
@@ -19,8 +19,6 @@ impl BoardGame {
     #[new]
     fn new(width: u32, height: u32, number_of_coins: u32) -> Self {
         let game = board_game_engine::BoardGame::new_random(width, height, number_of_coins);
-
-        println!("lool");
 
         Self { game }
     }
@@ -41,7 +39,7 @@ fn encode_player_move(number: u32) -> PlayerMove {
         0 => PlayerMove::Up,
         1 => PlayerMove::Right,
         2 => PlayerMove::Down,
-        3 => PlayerMove::Right,
+        3 => PlayerMove::Left,
         _ => panic!("Invalid moving direction!")
     } 
 }
