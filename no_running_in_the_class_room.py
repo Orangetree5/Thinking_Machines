@@ -8,7 +8,7 @@ from torch.distributions import Dirichlet
 
 class ActInfAgent:
     def __init__(self, amount_of_states, amount_of_observations, amount_of_actions, short_term_memory, planning_horizon,
-                 inference_rate=0.01, maximum_iterations=1000, convergence_criteria=0.001, action=None):
+                 inference_rate=0.01, maximum_iterations=1000, convergence_criteria=0.0001, action=None):
 
         ### Model Structural Values ###
 
@@ -78,7 +78,7 @@ class ActInfAgent:
             previous_state_free_logits = torch.cat([ghost_state.unsqueeze(0), torch.roll(self._posterior_past_state_free_logits, 1, 0)[1:]], dim=0)
             previous_state = torch.softmax(previous_state_free_logits, dim=-1)
             posterior_past_state = torch.softmax(self._posterior_past_state_free_logits, dim=-1)
-            joint_variational_matrix_observation_state = torch.einsum('to, ts -> tso', past_observations,
+            joint_variational_matrix_state_observation = torch.einsum('to, ts -> tso', past_observations,
                                                                       posterior_past_state)
             joint_variational_matrix_state_state = torch.einsum('tj, ti -> tij', previous_state,
                                                                 posterior_past_state)  # A temporal mean-field assumption has been made here.
@@ -91,7 +91,7 @@ class ActInfAgent:
 
             generalised_free_energy_time = (posterior_past_state * torch.log(
                 posterior_past_state.clamp(min=1e-8))).sum(dim=-1) - torch.einsum('tso, so -> t',
-                                                                                 joint_variational_matrix_observation_state,
+                                                                                 joint_variational_matrix_state_observation,
                                                                                  mean_log_likelihood) - torch.einsum(
                 'tij, tji -> t',
                 joint_variational_matrix_state_state, mean_log_transition)
@@ -130,11 +130,11 @@ class ActInfAgent:
                 self._posterior_transition.concentration[self._all_action_sequences].sum(dim=-1, keepdim=True))
             prior_future_observation = torch.softmax(self._prior_future_observation_free_logits, dim=-1)
             posterior_future_observation = torch.einsum('so, pts -> pto', self._posterior_likelihood.mean, posterior_future_state)
-            joint_variational_matrix_observation_state = torch.einsum('so, pts -> ptso', self._posterior_likelihood.mean,
+            joint_variational_matrix_state_observation = torch.einsum('so, pts -> ptso', self._posterior_likelihood.mean,
                                                                       posterior_future_state)
             joint_variational_matrix_state_state = torch.einsum('ptj, pti -> ptij', previous_state,
                                                                 posterior_future_state)  # A temporal mean-field assumption has been made here.
-            self.infer_parameters(previous_state, posterior_future_observation, hypothetical=True)
+            self.infer_parameters(previous_state, posterior_future_observation, joint_variational_matrix_state_observation, joint_variational_matrix_state_state, hypothetical=True)
             hypothetical_mean_log_likelihood = torch.digamma(self._hypothetical_future_likelihood.concentration) - torch.digamma(
                 self._hypothetical_future_likelihood.concentration.sum(dim=-1, keepdim=True))
             hypothetical_mean_log_transition = torch.digamma(
@@ -148,7 +148,7 @@ class ActInfAgent:
                 posterior_future_state.clamp(min=1e-8))).sum(dim=-1) + (posterior_future_observation * torch.log(
                 posterior_future_observation.clamp(min=1e-8))).sum(dim=-1) - (posterior_future_observation * torch.log(
                 prior_future_observation.clamp(min=1e-8))).sum(dim=-1) - torch.einsum('ptso, so -> pt',
-                                                                                 joint_variational_matrix_observation_state,
+                                                                                 joint_variational_matrix_state_observation,
                                                                                  mean_log_likelihood) - torch.einsum(
                 'ptij, ptji -> pt',
                 joint_variational_matrix_state_state, mean_log_transition))
@@ -162,7 +162,7 @@ class ActInfAgent:
                                                             expanded_posterior_likelihood).sum(dim=-1) + torch.distributions.kl_divergence(
                 self._hypothetical_future_transition, expanded_posterior_transition).sum(dim=(-1, -2)) - (
                                                      torch.einsum('ptso, pso -> p',
-                                                                  joint_variational_matrix_observation_state,
+                                                                  joint_variational_matrix_state_observation,
                                                                   hypothetical_mean_log_likelihood - mean_log_likelihood.unsqueeze(0)) + torch.einsum(
                                                  'ptij, ptji -> p',
                                                  joint_variational_matrix_state_state,
@@ -180,7 +180,7 @@ class ActInfAgent:
         self._chosen_policy = torch.multinomial(torch.softmax(self._posterior_policy_free_logits, dim=-1), num_samples=1).item()
         self.action = self._all_action_sequences[self._chosen_policy][0]
 
-    def infer_parameters(self, previous_state=None, posterior_future_observation=None, hypothetical=False):
+    def infer_parameters(self, previous_state=None, posterior_future_observation=None, joint_variational_matrix_state_observation=None, joint_variational_matrix_state_state=None, hypothetical=False):
         if not hypothetical:
             decay = 0.999
 
@@ -200,10 +200,8 @@ class ActInfAgent:
             self._hypothetical_future_transition = Dirichlet(self._posterior_transition.concentration[self._all_action_sequences].clone())
 
             successor_state = torch.softmax(self._posterior_future_state_free_logits, dim=-1)
-            self._hypothetical_future_likelihood.concentration += torch.einsum('pto, pts -> pso', posterior_future_observation, successor_state)
-            self._hypothetical_future_transition.concentration += torch.einsum('ptj, pti -> ptji',
-                previous_state,
-                successor_state)
+            self._hypothetical_future_likelihood.concentration += joint_variational_matrix_state_observation.sum(dim=1)
+            self._hypothetical_future_transition.concentration += joint_variational_matrix_state_state
 
     def commit_to_memory(self, observation):
         if self._observation_history.size(0) < self._short_term_memory:
