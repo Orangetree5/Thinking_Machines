@@ -140,6 +140,7 @@ class ActInfAgent:
             hypothetical_mean_log_transition = torch.digamma(
                 self._hypothetical_future_transition.concentration) - torch.digamma(
                 self._hypothetical_future_transition.concentration.sum(dim=-1, keepdim=True))
+            hypothetical_mean_log_transition = hypothetical_mean_log_transition[torch.arange(self._amount_of_policies)[:, None], self._all_action_sequences.long()]
             posterior_policy = torch.softmax(self._posterior_policy_free_logits, dim=0)
             prior_policy = torch.softmax(self._prior_policy_free_logits, dim=0)
             #############################
@@ -155,7 +156,7 @@ class ActInfAgent:
 
             expanded_posterior_likelihood = torch.distributions.Dirichlet(
     self._posterior_likelihood.concentration.unsqueeze(0).expand(self._amount_of_policies, -1, -1))
-            expanded_posterior_transition = torch.distributions.Dirichlet(self._posterior_transition.concentration[self._all_action_sequences])
+            expanded_posterior_transition = torch.distributions.Dirichlet(self._posterior_transition.concentration.unsqueeze(0).expand(self._all_action_sequences, -1, -1, -1))
 
             generalised_free_energy_policy = generalised_free_energy_policy_time.sum(
                 dim=-1) + torch.distributions.kl_divergence(self._hypothetical_future_likelihood,
@@ -199,7 +200,7 @@ class ActInfAgent:
             self._hypothetical_future_likelihood = Dirichlet(torch.stack([self._posterior_likelihood.concentration.clone()] * self._amount_of_policies))
             self._hypothetical_future_likelihood.concentration += joint_variational_matrix_state_observation.sum(dim=1)
 
-            transition_counts = torch.zeros(self._amount_of_policies, self._amount_of_actions, self._amount_of_states, self._amount_of_states, device=joint_variational_matrix_state_state.device, dtype=joint_variational_matrix_state_state)
+            transition_counts = torch.zeros(self._amount_of_policies, self._amount_of_actions, self._amount_of_states, self._amount_of_states, device=joint_variational_matrix_state_state.device, dtype=joint_variational_matrix_state_state.dtype)
             transition_counts = transition_counts.scatter_add(dim=1, index=self._all_action_sequences[:, :, None, None].expand_as(joint_variational_matrix_state_state), src=joint_variational_matrix_state_state)
             self._hypothetical_future_transition = Dirichlet(self._posterior_transition.concentration.unsqueeze(0) + transition_counts)
 
