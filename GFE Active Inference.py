@@ -12,6 +12,7 @@ planning_horizon = 3
 environment = Environment1()
 agent = ActInfAgent(amount_of_states, amount_of_observations, amount_of_actions, short_term_memory, planning_horizon)
 agent.initialise_preferences(0, 5)
+agent.initialise_preferences(1, -5)
 
 while True:
     agent.commit_to_memory(environment.play_turn(agent.action))
