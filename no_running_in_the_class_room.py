@@ -174,8 +174,7 @@ class Environment1:
     def play_turn(self, should_light_be_on_action: bool) -> int:
         self.light_on = should_light_be_on_action
 
-        print()
-        print()
+        print("\n")
 
         current_move = self.move % 4
         if self.light_on:
