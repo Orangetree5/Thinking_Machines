@@ -156,7 +156,7 @@ class ActInfAgent:
 
             expanded_posterior_likelihood = torch.distributions.Dirichlet(
     self._posterior_likelihood.concentration.unsqueeze(0).expand(self._amount_of_policies, -1, -1))
-            expanded_posterior_transition = torch.distributions.Dirichlet(self._posterior_transition.concentration.unsqueeze(0).expand(self._all_action_sequences, -1, -1, -1))
+            expanded_posterior_transition = torch.distributions.Dirichlet(self._posterior_transition.concentration.unsqueeze(0).expand(self._amount_of_policies, -1, -1, -1))
 
             generalised_free_energy_policy = generalised_free_energy_policy_time.sum(
                 dim=-1) + torch.distributions.kl_divergence(self._hypothetical_future_likelihood,
