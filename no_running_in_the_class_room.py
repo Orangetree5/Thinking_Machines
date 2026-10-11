@@ -5,10 +5,9 @@ from torch.distributions import Dirichlet
 
 
 
-
 class ActInfAgent:
     def __init__(self, amount_of_states, amount_of_observations, amount_of_actions, short_term_memory, planning_horizon,
-                 inference_rate=0.01, maximum_iterations=1000, convergence_criteria=0.0001, action=None):
+                 inference_rate=0.01, maximum_iterations=1000, convergence_criteria=0.001, action=None):
 
         ### Model Structural Values ###
 
@@ -35,8 +34,8 @@ class ActInfAgent:
                                                           requires_grad=False)
         self._prior_future_observation_free_logits = torch.zeros(self._amount_of_observations, requires_grad=False)
         self._prior_policy_free_logits = torch.zeros(self._amount_of_policies, requires_grad=False)
-        self._dirichlet_alpha = torch.ones(self._amount_of_states, self._amount_of_observations) + 0.1 * torch.rand(self._amount_of_states, self._amount_of_observations)
-        self._dirichlet_beta = torch.ones(self._amount_of_actions, self._amount_of_states, self._amount_of_states) + 0.1 * torch.rand(self._amount_of_actions, self._amount_of_states, self._amount_of_states)
+        self._dirichlet_alpha = 1.0 + 5 * torch.rand(self._amount_of_states, self._amount_of_observations)
+        self._dirichlet_beta = 1.0 + 5 * torch.rand(self._amount_of_actions, self._amount_of_states, self._amount_of_states)
         self._prior_likelihood = Dirichlet(self._dirichlet_alpha)
         self._prior_transition = Dirichlet(self._dirichlet_beta)
 
@@ -62,8 +61,12 @@ class ActInfAgent:
                 [self._posterior_past_state_free_logits, torch.zeros(self._amount_of_states)])
 
         ### BELIEF RESET ###
-        self._posterior_past_state_free_logits = self._prior_past_state_free_logits.detach().clone().requires_grad_(
-            True)
+        #self._posterior_past_state_free_logits = self._prior_past_state_free_logits.detach().clone().requires_grad_(
+        #    True)
+        with torch.no_grad():
+            log_lik = torch.log(self._posterior_likelihood.mean + 1e-8)  # (S, O)
+            init = log_lik[:, self._observation_history.long()].T  # (T, S)
+        self._posterior_past_state_free_logits = init.clone().requires_grad_(True)
         ####################
 
         optimizer_past = torch.optim.Adam([self._posterior_past_state_free_logits], lr=self._inference_rate)
@@ -270,3 +273,21 @@ class Environment1:
             else:
                 print("Clara is unhappy :(")
                 return 1
+
+class Environment2:
+    def __init__(self):
+        self._state = 0
+        self._good = 1
+        self._bad = 1
+
+    def play_turn(self, action):
+        self._state = (self._state + action) % 2
+
+        if self._state == 0:
+            self._good += 1
+            print("Good", 100*self._good/(self._good + self._bad), "%")
+            return 0
+        else:
+            self._bad += 1
+            print("Bad", 100*self._good/(self._good + self._bad), "%")
+            return 1
