@@ -34,8 +34,8 @@ class ActInfAgent:
                                                           requires_grad=False)
         self._prior_future_observation_free_logits = torch.zeros(self._amount_of_observations, requires_grad=False)
         self._prior_policy_free_logits = torch.zeros(self._amount_of_policies, requires_grad=False)
-        self._dirichlet_alpha = 1.0 + 5 * torch.rand(self._amount_of_states, self._amount_of_observations)
-        self._dirichlet_beta = 1.0 + 5 * torch.rand(self._amount_of_actions, self._amount_of_states, self._amount_of_states)
+        self._dirichlet_alpha = 1.0 + 1.0 * torch.rand(self._amount_of_states, self._amount_of_observations)
+        self._dirichlet_beta = 1.0 + 1.0 * torch.rand(self._amount_of_actions, self._amount_of_states, self._amount_of_states)
         self._prior_likelihood = Dirichlet(self._dirichlet_alpha)
         self._prior_transition = Dirichlet(self._dirichlet_beta)
 
@@ -60,8 +60,12 @@ class ActInfAgent:
             self._posterior_past_state_free_logits = torch.vstack(
                 [self._posterior_past_state_free_logits, torch.zeros(self._amount_of_states)])
 
+        previous_gfe = float("inf")
+        ghost_state = self._posterior_past_state_free_logits[0].detach().clone()
+        past_observations = F.one_hot(self._observation_history.long(), num_classes=self._amount_of_observations)
+
         ### BELIEF RESET ###
-        #self._posterior_past_state_free_logits = self._prior_past_state_free_logits.detach().clone().requires_grad_(
+        # self._posterior_past_state_free_logits = self._prior_past_state_free_logits.detach().clone().requires_grad_(
         #    True)
         with torch.no_grad():
             log_lik = torch.log(self._posterior_likelihood.mean + 1e-8)  # (S, O)
@@ -70,9 +74,6 @@ class ActInfAgent:
         ####################
 
         optimizer_past = torch.optim.Adam([self._posterior_past_state_free_logits], lr=self._inference_rate)
-        previous_gfe = float("inf")
-        ghost_state = self._posterior_past_state_free_logits[0].detach().clone()
-        past_observations = F.one_hot(self._observation_history.long(), num_classes=self._amount_of_observations)
 
         for i in range(self._maximum_iterations):
             optimizer_past.zero_grad()
@@ -227,6 +228,8 @@ class Environment1:
     def __init__(self) -> None:
         self.move = 0
         self.light_on = True
+        self.good = 1
+        self.bad = 1
 
     def play_turn(self, should_light_be_on_action: bool) -> int:
         self.light_on = should_light_be_on_action
@@ -236,10 +239,10 @@ class Environment1:
 
         current_move = self.move % 4
         if self.light_on:
-            print("Clara is on move", current_move, "and lights are on.")
+            print("Clara is on move", current_move, "and lights are on.", 100*self.good/(self.good + self.bad), "%")
 
         else:
-            print("Clara is on move", current_move, "and lights are off.")
+            print("Clara is on move", current_move, "and lights are off.", 100*self.good/(self.good + self.bad), "%")
 
         if current_move == 0:
             is_moving_this_turn = bool(random.getrandbits(1))
@@ -247,10 +250,12 @@ class Environment1:
             if is_moving_this_turn:
                 self.move += 1
                 if not self.light_on:
+                    self.good += 1
                     print("Door moves.")
                     return 2
                 else:
                     # The model doesnt know that the door moved in this case?
+                    self.bad += 1
                     print("Door moves. Clara is unhappy :(")
                     return 1
             else:
@@ -259,18 +264,22 @@ class Environment1:
         if current_move == 3:
             self.move += 1
             if not self.light_on:
+                self.good += 1
                 print("Clara is happy :)")
                 return 0
             else:
+                self.bad += 1
                 print("Clara is unhappy :(")
                 return 1
 
         else:
             self.move += 1
             if self.light_on:
+                self.good += 1
                 print("Clara is happy :)")
                 return 0
             else:
+                self.bad += 1
                 print("Clara is unhappy :(")
                 return 1
 
