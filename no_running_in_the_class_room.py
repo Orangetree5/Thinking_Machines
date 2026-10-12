@@ -68,10 +68,10 @@ class ActInfAgent:
         ### BELIEF RESET ###
         # self._posterior_past_state_free_logits = self._prior_past_state_free_logits.detach().clone().requires_grad_(
         #    True)
-        with torch.no_grad():
-            log_lik = torch.log(self._posterior_likelihood.mean + 1e-8)  # (S, O)
-            init = log_lik[:, self._observation_history.long()].T  # (T, S)
-        self._posterior_past_state_free_logits = init.clone().requires_grad_(True)
+        #with torch.no_grad():
+        #    log_lik = torch.log(self._posterior_likelihood.mean + 1e-8)  # (S, O)
+        #    init = log_lik[:, self._observation_history.long()].T  # (T, S)
+        #self._posterior_past_state_free_logits = init.clone().requires_grad_(True)
         ####################
 
         optimizer_past = torch.optim.Adam([self._posterior_past_state_free_logits], lr=self._inference_rate)
@@ -110,7 +110,10 @@ class ActInfAgent:
             generalised_free_energy.backward()
             optimizer_past.step()
 
-            self.infer_parameters(joint_variational_matrix_state_observation, joint_variational_matrix_state_state)
+        self.infer_parameters(joint_variational_matrix_state_observation, joint_variational_matrix_state_state)
+
+        return generalised_free_energy
+
 
     def infer_future(self):
         ### BELIEF RESET ###
@@ -225,8 +228,23 @@ class ActInfAgent:
             self._hypothetical_future_transition = Dirichlet(self._posterior_transition.concentration.unsqueeze(0) + transition_counts)
 
     def infer_present(self, rounds=10):
+        ### BELIEF RESET ###
+        # self._posterior_past_state_free_logits = self._prior_past_state_free_logits.detach().clone().requires_grad_(
+        #    True)
+        with torch.no_grad():
+            log_lik = torch.log(self._posterior_likelihood.mean + 1e-8)  # (S, O)
+            init = log_lik[:, self._observation_history.long()].T  # (T, S)
+        self._posterior_past_state_free_logits = init.clone().requires_grad_(True)
+        ####################
+
+        previous_gfe = float("inf")
+
         for index in range(rounds):
-            self.infer_past()
+            generalised_free_energy = self.infer_past()
+
+            if abs(previous_gfe - generalised_free_energy) < self._convergence_criteria:
+                break
+            previous_gfe = generalised_free_energy.item()
 
         self.infer_parameters(commit=True)
 
@@ -259,12 +277,19 @@ class Environment1:
         print()
         print()
 
+        if self.good + self.bad > 50:
+            print()
+            print("NEW BATCH!")
+            print()
+            self.good = 1
+            self.bad = 1
+
         current_move = self.move % 4
         if self.light_on:
-            print("Clara is on move", current_move, "and lights are on.", 100*self.good/(self.good + self.bad), "%")
+            print("Clara is on move", current_move, "and lights are on.", round(100*self.good/(self.good + self.bad), 1), "%")
 
         else:
-            print("Clara is on move", current_move, "and lights are off.", 100*self.good/(self.good + self.bad), "%")
+            print("Clara is on move", current_move, "and lights are off.", round(100*self.good/(self.good + self.bad), 1), "%")
 
         if current_move == 0:
             is_moving_this_turn = bool(random.getrandbits(1))
@@ -314,11 +339,18 @@ class Environment2:
     def play_turn(self, action):
         self._state = (self._state + action) % 2
 
+        if self._good + self._bad > 50:
+            print()
+            print("NEW BATCH!")
+            print()
+            self._good = 1
+            self._bad = 1
+
         if self._state == 0:
             self._good += 1
-            print("Good", 100*self._good/(self._good + self._bad), "%")
+            print("Good", round(100*self._good/(self._good + self._bad), 1), "%")
             return 0
         else:
             self._bad += 1
-            print("Bad", 100*self._good/(self._good + self._bad), "%")
+            print("Bad", round(100*self._good/(self._good + self._bad), 1), "%")
             return 1
