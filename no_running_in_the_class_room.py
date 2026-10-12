@@ -24,6 +24,7 @@ class ActInfAgent:
         self._maximum_iterations = maximum_iterations
         self._convergence_criteria = convergence_criteria
         self._forgetfulness = forgetfulness
+        self._ghost_state = torch.zeros(amount_of_states)
         self._hypothetical_future_likelihood = None
         self._hypothetical_future_transition = None
 
@@ -35,8 +36,8 @@ class ActInfAgent:
                                                           requires_grad=False)
         self._prior_future_observation_free_logits = torch.zeros(self._amount_of_observations, requires_grad=False)
         self._prior_policy_free_logits = torch.zeros(self._amount_of_policies, requires_grad=False)
-        self._dirichlet_alpha = 1.0 + 1.0 * torch.rand(self._amount_of_states, self._amount_of_observations)
-        self._dirichlet_beta = 1.0 + 1.0 * torch.rand(self._amount_of_actions, self._amount_of_states, self._amount_of_states)
+        self._dirichlet_alpha = 1.0 + 5.0 * torch.rand(self._amount_of_states, self._amount_of_observations)
+        self._dirichlet_beta = 1.0 + 5.0 * torch.rand(self._amount_of_actions, self._amount_of_states, self._amount_of_states)
         self._prior_likelihood = Dirichlet(self._dirichlet_alpha)
         self._prior_transition = Dirichlet(self._dirichlet_beta)
 
@@ -62,7 +63,6 @@ class ActInfAgent:
                 [self._posterior_past_state_free_logits, torch.zeros(self._amount_of_states)])
 
         previous_gfe = float("inf")
-        ghost_state = self._posterior_past_state_free_logits[0].detach().clone()
         past_observations = F.one_hot(self._observation_history.long(), num_classes=self._amount_of_observations)
 
         ### BELIEF RESET ###
@@ -80,7 +80,7 @@ class ActInfAgent:
             optimizer_past.zero_grad()
 
             ### READABILITY VARIABLES ###
-            previous_state_free_logits = torch.cat([ghost_state.unsqueeze(0), torch.roll(self._posterior_past_state_free_logits, 1, 0)[1:]], dim=0)
+            previous_state_free_logits = torch.cat([self._ghost_state.unsqueeze(0), torch.roll(self._posterior_past_state_free_logits, 1, 0)[1:]], dim=0)
             previous_state = torch.softmax(previous_state_free_logits, dim=-1)
             posterior_past_state = torch.softmax(self._posterior_past_state_free_logits, dim=-1)
             joint_variational_matrix_state_observation = torch.einsum('to, ts -> tso', past_observations,
@@ -213,6 +213,8 @@ class ActInfAgent:
                 previous_state = torch.softmax(self._posterior_past_state_free_logits[0], dim=-1)
                 self._prior_likelihood.concentration[:, self._observation_history[1].long()] += successor_state.detach()
                 self._prior_transition.concentration[self._action_history[1].long()] += torch.outer(previous_state, successor_state).detach()
+
+                self._ghost_state = self._posterior_past_state_free_logits[0].detach().clone()
 
         else:
             self._hypothetical_future_likelihood = Dirichlet(torch.stack([self._posterior_likelihood.concentration.clone()] * self._amount_of_policies))
