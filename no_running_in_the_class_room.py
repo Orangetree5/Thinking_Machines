@@ -36,8 +36,8 @@ class ActInfAgent:
                                                           requires_grad=False)
         self._prior_future_observation_free_logits = torch.zeros(self._amount_of_observations, requires_grad=False)
         self._prior_policy_free_logits = torch.zeros(self._amount_of_policies, requires_grad=False)
-        self._dirichlet_alpha = 1.0 + 5.0 * torch.rand(self._amount_of_states, self._amount_of_observations)
-        self._dirichlet_beta = 1.0 + 5.0 * torch.rand(self._amount_of_actions, self._amount_of_states, self._amount_of_states)
+        self._dirichlet_alpha = 1.0 + 1.0 * torch.rand(self._amount_of_states, self._amount_of_observations)
+        self._dirichlet_beta = 1.0 + 1.0 * torch.rand(self._amount_of_actions, self._amount_of_states, self._amount_of_states)
         self._prior_likelihood = Dirichlet(self._dirichlet_alpha)
         self._prior_transition = Dirichlet(self._dirichlet_beta)
 
@@ -268,8 +268,8 @@ class Environment1:
     def __init__(self) -> None:
         self.move = 0
         self.light_on = True
-        self.good = 1
-        self.bad = 1
+        self.good = 0
+        self.bad = 0
 
     def play_turn(self, should_light_be_on_action: bool) -> int:
         self.light_on = should_light_be_on_action
@@ -281,15 +281,15 @@ class Environment1:
             print()
             print("NEW BATCH!")
             print()
-            self.good = 1
-            self.bad = 1
+            self.good = 0
+            self.bad = 0
 
         current_move = self.move % 4
         if self.light_on:
-            print("Clara is on move", current_move, "and lights are on.", round(100*self.good/(self.good + self.bad), 1), "%")
+            print("Clara is on move", current_move, "and lights are on.")
 
         else:
-            print("Clara is on move", current_move, "and lights are off.", round(100*self.good/(self.good + self.bad), 1), "%")
+            print("Clara is on move", current_move, "and lights are off.")
 
         if current_move == 0:
             is_moving_this_turn = bool(random.getrandbits(1))
@@ -299,13 +299,16 @@ class Environment1:
                 if not self.light_on:
                     self.good += 1
                     print("Door moves.")
+                    print("Performance: ", round(100 * self.good / (self.good + self.bad), 1), "%")
                     return 2
                 else:
                     # The model doesnt know that the door moved in this case?
                     self.bad += 1
                     print("Door moves. Clara is unhappy :(")
+                    print("Performance: ", round(100 * self.good / (self.good + self.bad), 1), "%")
                     return 1
             else:
+                print("Performance: ", round(100 * self.good / (self.good + self.bad), 1), "%")
                 return 3
 
         if current_move == 3:
@@ -313,10 +316,12 @@ class Environment1:
             if not self.light_on:
                 self.good += 1
                 print("Clara is happy :)")
+                print("Performance: ", round(100 * self.good / (self.good + self.bad), 1), "%")
                 return 0
             else:
                 self.bad += 1
                 print("Clara is unhappy :(")
+                print("Performance: ", round(100 * self.good / (self.good + self.bad), 1), "%")
                 return 1
 
         else:
@@ -324,17 +329,21 @@ class Environment1:
             if self.light_on:
                 self.good += 1
                 print("Clara is happy :)")
+                print("Performance: ", round(100 * self.good / (self.good + self.bad), 1), "%")
                 return 0
             else:
                 self.bad += 1
                 print("Clara is unhappy :(")
+                print("Performance: ", round(100 * self.good / (self.good + self.bad), 1), "%")
                 return 1
+
+
 
 class Environment2:
     def __init__(self):
         self._state = 0
-        self._good = 1
-        self._bad = 1
+        self._good = 0
+        self._bad = 0
 
     def play_turn(self, action):
         self._state = (self._state + action) % 2
@@ -343,8 +352,8 @@ class Environment2:
             print()
             print("NEW BATCH!")
             print()
-            self._good = 1
-            self._bad = 1
+            self._good = 0
+            self._bad = 0
 
         if self._state == 0:
             self._good += 1
