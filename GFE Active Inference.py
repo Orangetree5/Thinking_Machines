@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import random
 from no_running_in_the_class_room import *
 
-amount_of_states = 8
+amount_of_states = 9
 amount_of_observations = 4
 amount_of_actions = 2
 short_term_memory = 200

@@ -17,7 +17,7 @@ class ActInfAgent:
         self._short_term_memory = short_term_memory
         self._planning_horizon = planning_horizon
         self.action = random.randint(0, amount_of_actions-1)
-        self._chosen_policy = None
+        self._chosen_policy = 0
         self._amount_of_policies = self._amount_of_actions ** self._planning_horizon
         self._all_action_sequences = torch.cartesian_prod(*[torch.arange(self._amount_of_actions)] * self._planning_horizon)
         self._inference_rate = inference_rate
@@ -56,12 +56,6 @@ class ActInfAgent:
         self._prior_future_observation_free_logits[observation] = value
 
     def infer_past(self):
-        while self._posterior_past_state_free_logits.size(dim=0) < self._observation_history.size(dim=0):
-            self._prior_past_state_free_logits = torch.vstack(
-                [self._prior_past_state_free_logits, torch.zeros(self._amount_of_states)])
-            self._posterior_past_state_free_logits = torch.vstack(
-                [self._posterior_past_state_free_logits, torch.zeros(self._amount_of_states)])
-
         previous_gfe = float("inf")
         past_observations = F.one_hot(self._observation_history.long(), num_classes=self._amount_of_observations)
 
@@ -73,6 +67,12 @@ class ActInfAgent:
         #    init = log_lik[:, self._observation_history.long()].T  # (T, S)
         #self._posterior_past_state_free_logits = init.clone().requires_grad_(True)
         ####################
+
+        mean_log_likelihood = torch.digamma(self._posterior_likelihood.concentration) - torch.digamma(
+            self._posterior_likelihood.concentration.sum(dim=-1, keepdim=True))
+        mean_log_transition = torch.digamma(
+            self._posterior_transition.concentration[self._action_history.long()]) - torch.digamma(
+            self._posterior_transition.concentration[self._action_history.long()].sum(dim=-1, keepdim=True))
 
         optimizer_past = torch.optim.Adam([self._posterior_past_state_free_logits], lr=self._inference_rate)
 
@@ -87,11 +87,6 @@ class ActInfAgent:
                                                                       posterior_past_state)
             joint_variational_matrix_state_state = torch.einsum('tj, ti -> tji', previous_state,
                                                                 posterior_past_state)  # A temporal mean-field assumption has been made here.
-            mean_log_likelihood = torch.digamma(self._posterior_likelihood.concentration) - torch.digamma(
-                self._posterior_likelihood.concentration.sum(dim=-1, keepdim=True))
-            mean_log_transition = torch.digamma(
-                self._posterior_transition.concentration[self._action_history.long()]) - torch.digamma(
-                self._posterior_transition.concentration[self._action_history.long()].sum(dim=-1, keepdim=True))
             #############################
 
             generalised_free_energy_time = (posterior_past_state * torch.log(
@@ -101,7 +96,7 @@ class ActInfAgent:
                 'tji, tji -> t',
                 joint_variational_matrix_state_state, mean_log_transition)
 
-            generalised_free_energy = generalised_free_energy_time.sum(dim=-1)
+            generalised_free_energy = generalised_free_energy_time.sum(dim=-1) + torch.distributions.kl_divergence(self._posterior_likelihood, self._prior_likelihood).sum() + torch.distributions.kl_divergence(self._posterior_transition, self._prior_transition).sum()
 
             if abs(previous_gfe - generalised_free_energy) < self._convergence_criteria:
                 break
@@ -112,7 +107,7 @@ class ActInfAgent:
 
         self.infer_parameters(joint_variational_matrix_state_observation, joint_variational_matrix_state_state)
 
-        return generalised_free_energy + torch.distributions.kl_divergence(self._posterior_likelihood, self._prior_likelihood).sum() + torch.distributions.kl_divergence(self._posterior_transition, self._prior_transition).sum()
+        return generalised_free_energy
 
 
     def infer_future(self):
@@ -212,10 +207,10 @@ class ActInfAgent:
                 self._prior_likelihood.concentration.clamp_(min=1.0)
                 self._prior_transition.concentration.clamp_(min=1.0)
 
-                successor_state = torch.softmax(self._posterior_past_state_free_logits[1], dim=-1)
-                previous_state = torch.softmax(self._posterior_past_state_free_logits[0], dim=-1)
-                self._prior_likelihood.concentration[:, self._observation_history[1].long()] += successor_state.detach()
-                self._prior_transition.concentration[self._action_history[1].long()] += torch.outer(previous_state, successor_state).detach()
+                successor_state = torch.softmax(self._posterior_past_state_free_logits[0], dim=-1)
+                previous_state = torch.softmax(self._ghost_state, dim=-1)
+                self._prior_likelihood.concentration[:, self._observation_history[0].long()] += successor_state.detach()
+                self._prior_transition.concentration[self._action_history[0].long()] += torch.outer(previous_state, successor_state).detach()
 
                 self._ghost_state = self._posterior_past_state_free_logits[0].detach().clone()
 
@@ -231,11 +226,26 @@ class ActInfAgent:
         ### BELIEF RESET ###
         # self._posterior_past_state_free_logits = self._prior_past_state_free_logits.detach().clone().requires_grad_(
         #    True)
-        with torch.no_grad():
-            log_lik = torch.log(self._posterior_likelihood.mean + 1e-8)  # (S, O)
-            init = log_lik[:, self._observation_history.long()].T  # (T, S)
-        self._posterior_past_state_free_logits = init.clone().requires_grad_(True)
+        #with torch.no_grad():
+        #    log_lik = torch.log(self._posterior_likelihood.mean + 1e-8)  # (S, O)
+        #    init = log_lik[:, self._observation_history.long()].T  # (T, S)
+        #self._posterior_past_state_free_logits = init.clone().requires_grad_(True)
         ####################
+
+        if self._posterior_past_state_free_logits.size(dim=0) == self._observation_history.size(dim=0):
+            self._posterior_past_state_free_logits = torch.cat(
+                [torch.roll(self._posterior_past_state_free_logits, -1, 0)[:-1],
+                 self._posterior_future_state_free_logits[self._chosen_policy, 0].unsqueeze(0)],
+                dim=0).detach().clone().requires_grad_(True)
+
+        else:
+            while self._posterior_past_state_free_logits.size(dim=0) < self._observation_history.size(dim=0):
+                self._prior_past_state_free_logits = torch.vstack(
+                    [self._prior_past_state_free_logits, torch.zeros(self._amount_of_states)])
+                self._posterior_past_state_free_logits = torch.cat(
+                [self._posterior_past_state_free_logits,
+                 self._posterior_future_state_free_logits[self._chosen_policy, 0].unsqueeze(0)],
+                dim=0).detach().clone().requires_grad_(True)
 
         previous_gfe = float("inf")
 
