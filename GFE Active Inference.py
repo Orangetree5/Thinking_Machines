@@ -16,5 +16,5 @@ agent.initialise_preferences(1, -5)
 
 while True:
     agent.commit_to_memory(environment.play_turn(agent.action))
-    agent.infer_present()
+    agent.infer_present(rounds=20)
     agent.infer_future()

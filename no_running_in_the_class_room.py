@@ -112,7 +112,7 @@ class ActInfAgent:
 
         self.infer_parameters(joint_variational_matrix_state_observation, joint_variational_matrix_state_state)
 
-        return generalised_free_energy
+        return generalised_free_energy + torch.distributions.kl_divergence(self._posterior_likelihood, self._prior_likelihood).sum() + torch.distributions.kl_divergence(self._posterior_transition, self._prior_transition).sum()
 
 
     def infer_future(self):
@@ -308,7 +308,10 @@ class Environment1:
                     print("Performance: ", round(100 * self.good / (self.good + self.bad), 1), "%")
                     return 1
             else:
-                print("Performance: ", round(100 * self.good / (self.good + self.bad), 1), "%")
+                if self.good + self.bad == 0:
+                    print("Performance: None")
+                else:
+                    print("Performance: ", round(100 * self.good / (self.good + self.bad), 1), "%")
                 return 3
 
         if current_move == 3:
