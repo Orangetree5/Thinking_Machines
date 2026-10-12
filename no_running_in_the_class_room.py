@@ -7,7 +7,7 @@ from torch.distributions import Dirichlet
 
 class ActInfAgent:
     def __init__(self, amount_of_states, amount_of_observations, amount_of_actions, short_term_memory, planning_horizon,
-                 inference_rate=0.01, maximum_iterations=1000, convergence_criteria=0.001, action=None):
+                 inference_rate=0.01, maximum_iterations=1000, convergence_criteria=0.001, forgetfulness=0.001, action=None):
 
         ### Model Structural Values ###
 
@@ -23,6 +23,7 @@ class ActInfAgent:
         self._inference_rate = inference_rate
         self._maximum_iterations = maximum_iterations
         self._convergence_criteria = convergence_criteria
+        self._forgetfulness = forgetfulness
         self._hypothetical_future_likelihood = None
         self._hypothetical_future_transition = None
 
@@ -109,6 +110,8 @@ class ActInfAgent:
             generalised_free_energy.backward()
             optimizer_past.step()
 
+            self.infer_parameters(joint_variational_matrix_state_observation, joint_variational_matrix_state_state)
+
     def infer_future(self):
         ### BELIEF RESET ###
         self._posterior_future_state_free_logits = self._prior_future_state_free_logits.detach().clone().requires_grad_(
@@ -138,7 +141,7 @@ class ActInfAgent:
                                                                       posterior_future_state)
             joint_variational_matrix_state_state = torch.einsum('ptj, pti -> ptji', previous_state,
                                                                 posterior_future_state)  # A temporal mean-field assumption has been made here.
-            self.infer_parameters(previous_state, posterior_future_observation, joint_variational_matrix_state_observation, joint_variational_matrix_state_state, hypothetical=True)
+            self.infer_parameters(joint_variational_matrix_state_observation, joint_variational_matrix_state_state, previous_state, posterior_future_observation, hypothetical=True)
             hypothetical_mean_log_likelihood = torch.digamma(self._hypothetical_future_likelihood.concentration) - torch.digamma(
                 self._hypothetical_future_likelihood.concentration.sum(dim=-1, keepdim=True))
             hypothetical_mean_log_transition = torch.digamma(
@@ -185,20 +188,31 @@ class ActInfAgent:
         self._chosen_policy = torch.multinomial(torch.softmax(self._posterior_policy_free_logits, dim=-1), num_samples=1).item()
         self.action = self._all_action_sequences[self._chosen_policy][0]
 
-    def infer_parameters(self, previous_state=None, posterior_future_observation=None, joint_variational_matrix_state_observation=None, joint_variational_matrix_state_state=None, hypothetical=False):
+    def infer_parameters(self, joint_variational_matrix_state_observation=None, joint_variational_matrix_state_state=None, previous_state=None, posterior_future_observation=None, hypothetical=False, commit=False):
         if not hypothetical:
-            decay = 0.999
+            if not commit:
+                likelihood_window_counts = joint_variational_matrix_state_observation.sum(dim=0)
+                transition_window_counts = torch.zeros(self._amount_of_actions,
+                                                self._amount_of_states, self._amount_of_states,
+                                                device=joint_variational_matrix_state_state.device,
+                                                dtype=joint_variational_matrix_state_state.dtype)
+                transition_window_counts = transition_window_counts.scatter_add(dim=0, index=self._action_history[
+                    :, None, None].long().expand_as(joint_variational_matrix_state_state),
+                                                                  src=joint_variational_matrix_state_state)
 
-            if self._observation_history.size(0) > 1:
-                self._posterior_likelihood.concentration *= decay
-                self._posterior_transition.concentration *= decay
-                self._posterior_likelihood.concentration.clamp_(min=1.0)
-                self._posterior_transition.concentration.clamp_(min=1.0)
+                self._posterior_likelihood.concentration = self._prior_likelihood.concentration.detach().clone() + likelihood_window_counts.detach().clone()
+                self._posterior_transition.concentration = self._prior_transition.concentration.detach().clone() + transition_window_counts.detach().clone()
 
-                successor_state = torch.softmax(self._posterior_past_state_free_logits[-1], dim=-1)
-                previous_state = torch.softmax(self._posterior_past_state_free_logits[-2], dim=-1)
-                self._posterior_likelihood.concentration[:, self._observation_history[-1].long()] += successor_state.detach()
-                self._posterior_transition.concentration[self._action_history[-1].long()] += torch.outer(previous_state, successor_state).detach()
+            if commit and not (self._observation_history.size(0) < self._short_term_memory):
+                self._prior_likelihood.concentration *= (1 - self._forgetfulness)
+                self._prior_transition.concentration *= (1 - self._forgetfulness)
+                self._prior_likelihood.concentration.clamp_(min=1.0)
+                self._prior_transition.concentration.clamp_(min=1.0)
+
+                successor_state = torch.softmax(self._posterior_past_state_free_logits[1], dim=-1)
+                previous_state = torch.softmax(self._posterior_past_state_free_logits[0], dim=-1)
+                self._prior_likelihood.concentration[:, self._observation_history[1].long()] += successor_state.detach()
+                self._prior_transition.concentration[self._action_history[1].long()] += torch.outer(previous_state, successor_state).detach()
 
         else:
             self._hypothetical_future_likelihood = Dirichlet(torch.stack([self._posterior_likelihood.concentration.clone()] * self._amount_of_policies))
@@ -207,6 +221,12 @@ class ActInfAgent:
             transition_counts = torch.zeros(self._amount_of_policies, self._amount_of_actions, self._amount_of_states, self._amount_of_states, device=joint_variational_matrix_state_state.device, dtype=joint_variational_matrix_state_state.dtype)
             transition_counts = transition_counts.scatter_add(dim=1, index=self._all_action_sequences[:, :, None, None].expand_as(joint_variational_matrix_state_state), src=joint_variational_matrix_state_state)
             self._hypothetical_future_transition = Dirichlet(self._posterior_transition.concentration.unsqueeze(0) + transition_counts)
+
+    def infer_present(self, rounds=10):
+        for index in range(rounds):
+            self.infer_past()
+
+        self.infer_parameters(commit=True)
 
     def commit_to_memory(self, observation):
         if self._observation_history.size(0) < self._short_term_memory:

@@ -6,7 +6,7 @@ from no_running_in_the_class_room import *
 amount_of_states = 8
 amount_of_observations = 4
 amount_of_actions = 2
-short_term_memory = 100
+short_term_memory = 20
 planning_horizon = 3
 
 environment = Environment1()
@@ -16,6 +16,5 @@ agent.initialise_preferences(1, -5)
 
 while True:
     agent.commit_to_memory(environment.play_turn(agent.action))
-    agent.infer_past()
-    agent.infer_parameters()
+    agent.infer_present()
     agent.infer_future()
