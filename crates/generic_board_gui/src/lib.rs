@@ -1,41 +1,47 @@
-use iced::widget::button;
-use iced::widget::{Container, button::{Style, Status}, column, container, row};
-use iced::{Alignment, Length, Subscription, Theme};
+use std::sync::Arc;
+
 use iced::futures::Stream;
 use iced::futures::channel::mpsc;
 use iced::futures::channel::mpsc::{Receiver, Sender};
 use iced::futures::sink::SinkExt;
 use iced::stream;
+use iced::widget::button;
+use iced::widget::{
+    Container,
+    button::{Status, Style},
+    column, container, row,
+};
+use iced::{Alignment, Length, Subscription, Theme};
 
-trait BoardSupplier<C: Cell>: Send + Sync + 'static {
+pub trait BoardSupplier<C: Cell>: Send + 'static {
     fn recv_board_state_blocking(&self) -> Vec<Vec<C>>;
     fn height(&self) -> u32;
     fn width(&self) -> u32;
 }
 
-trait Cell: Clone + Send + 'static {
+pub trait Cell: Clone + Send + Sync + 'static {
     fn style(&self) -> fn(&Theme, Status) -> Style;
 }
 
-struct Gui<C: Cell, S: BoardSupplier<C>> {
+pub struct Gui<C: Cell, S: BoardSupplier<C>> {
     board_supplier: Option<S>,
 
-    currently_rendering_cells: Vec<Vec<C>>,
+    currently_rendering_cells: Arc<Vec<Vec<C>>>,
     width: u32,
     height: u32,
 }
 
 impl<C: Cell, S: BoardSupplier<C>> Gui<C, S> {
-    fn new(board_supplier: S) -> Self {
+    pub fn new(board_supplier: S) -> Self {
         Self {
             width: board_supplier.width(),
             height: board_supplier.height(),
             board_supplier: Some(board_supplier),
-            currently_rendering_cells: Vec::new(),
+            currently_rendering_cells: Arc::new(Vec::new()),
         }
     }
 
-    fn update(&mut self, message: Message<C, S>) {
+    pub fn update(&mut self, message: Message<C, S>) {
         match message {
             Message::NewBoardState(new_cells) => {
                 self.currently_rendering_cells = new_cells;
@@ -48,6 +54,7 @@ impl<C: Cell, S: BoardSupplier<C>> Gui<C, S> {
                             .expect("supplier should have been initialized"),
                     )
                     .expect("Couldnt send");
+
             }
         }
     }
@@ -62,12 +69,22 @@ impl<C: Cell, S: BoardSupplier<C>> Gui<C, S> {
                     .await
                     .expect("couldnt send TxReady message");
 
-                let board_supplier: S = receiver.recv().await.unwrap();
-                loop {
-                    let new_cells = board_supplier.recv_board_state_blocking();
+                let (board_tx, mut board_rx) = tokio::sync::mpsc::channel(1);
 
+                let board_supplier: S = receiver.recv().await.unwrap();
+                std::thread::spawn(move || {
+                    loop {
+                        let new_cells = board_supplier.recv_board_state_blocking();
+
+                        if board_tx.blocking_send(new_cells).is_err() {
+                            return;
+                        }
+                    }
+                });
+
+                while let Some(new_cells) = board_rx.recv().await {
                     output
-                        .send(Message::NewBoardState(new_cells))
+                        .send(Message::NewBoardState(Arc::new(new_cells)))
                         .await
                         .unwrap();
                 }
@@ -77,12 +94,11 @@ impl<C: Cell, S: BoardSupplier<C>> Gui<C, S> {
         Subscription::run(sub)
     }
 
-    fn view(&self) -> iced::Element<'_, Message<C, S>> {
+    pub fn view(&self) -> iced::Element<'_, Message<C, S>> {
         let board = self.board_container();
 
         board.into()
     }
-
 
     fn board_container(&self) -> Container<'_, Message<C, S>> {
         let mut board_layout = column![].spacing(1);
@@ -91,7 +107,13 @@ impl<C: Cell, S: BoardSupplier<C>> Gui<C, S> {
             let mut row_layout = row![].spacing(1);
 
             for x in 0..self.width {
-                let cell = &self.currently_rendering_cells[y as usize][x as usize];
+                let cell = if let Some(row) = self.currently_rendering_cells.get(y as usize)
+                    && let Some(cell) = row.get(x as usize)
+                {
+                    cell
+                } else {
+                    break;
+                };
 
                 let style = cell.style();
 
@@ -112,21 +134,20 @@ impl<C: Cell, S: BoardSupplier<C>> Gui<C, S> {
             .align_y(Alignment::Center)
             .align_x(Alignment::Center)
     }
-
 }
 
 #[derive(Debug)]
-enum Message<C: Cell, S: BoardSupplier<C>> {
+pub enum Message<C: Cell, S: BoardSupplier<C>> {
     TxReady(Sender<S>),
-    NewBoardState(Vec<Vec<C>>),
+    NewBoardState(Arc<Vec<Vec<C>>>),
 }
 
 impl<C: Cell, S: BoardSupplier<C>> Clone for Message<C, S> {
     fn clone(&self) -> Self {
         match self {
-            Message::NewBoardState(cells) => Self::NewBoardState(cells.clone()),
+            Message::NewBoardState(cells) => Self::NewBoardState(Arc::clone(cells)),
             // FIXME What the fux
-            Message::TxReady(_sender) => panic!("Cant clone BoardSupplier")
+            Message::TxReady(_sender) => panic!("Cant clone BoardSupplier"),
         }
-    } 
+    }
 }

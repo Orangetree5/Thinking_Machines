@@ -130,6 +130,10 @@ impl BoardGame {
         None
     }
 
+    pub fn get_board_info<'a>(&'a self) -> BoardInfo<'a> {
+        BoardInfo { coin_positions: self.coin_positions.as_ref(), player_position: &self.player_position, width: self.width, height: self.height }
+    }
+
     fn move_player(&self, player_move: &PlayerMove) -> Option<Position> {
         match player_move {
             PlayerMove::Up => {
@@ -176,6 +180,14 @@ impl BoardGame {
     }
 }
 
+pub struct BoardInfo<'a> {
+    pub coin_positions: &'a [Position],
+    pub player_position: &'a Position,
+    pub height: u32,
+    pub width: u32,
+}
+
+
 impl std::fmt::Display for BoardGame {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for y in (0..self.height).rev() {
@@ -198,7 +210,7 @@ impl std::fmt::Display for BoardGame {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct Position {
+pub struct Position {
     pub x: u32,
     pub y: u32,
 }

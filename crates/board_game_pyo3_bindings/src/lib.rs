@@ -1,11 +1,8 @@
 use board_game_engine::{PlayerMove, TurnResult};
 use pyo3::prelude::*;
 
-use pyo3_stub_gen::{
-    derive::gen_stub_pymethods,
-};
+use pyo3_stub_gen::derive::gen_stub_pymethods;
 use pyo3_stub_gen_derive::gen_stub_pyclass;
-
 
 #[gen_stub_pyclass]
 #[pyclass]
@@ -40,19 +37,17 @@ fn encode_player_move(number: u32) -> PlayerMove {
         1 => PlayerMove::Right,
         2 => PlayerMove::Down,
         3 => PlayerMove::Left,
-        _ => panic!("Invalid moving direction!")
-    } 
+        _ => panic!("Invalid moving direction!"),
+    }
 }
 
 fn decode_turn_result(turn_result: TurnResult) -> i32 {
     match turn_result {
         TurnResult::CoinFound => 0,
-        TurnResult::DistanceToCoinInMovingDirection(distance) => {
-            match distance {
-                None => -1,
-                Some(distance) => distance as i32,
-            }
-        }
+        TurnResult::DistanceToCoinInMovingDirection(distance) => match distance {
+            None => -1,
+            Some(distance) => distance as i32,
+        },
     }
 }
 
@@ -61,14 +56,12 @@ fn decode_turn_result(turn_result: TurnResult) -> i32 {
 pub mod board_game_py {
     use pyo3::prelude::*;
 
-
     #[pymodule_export]
-    use super::{BoardGame};
+    use super::BoardGame;
 }
 
-
-use std::path::Path;
 use pyo3_stub_gen::StubInfo;
+use std::path::Path;
 
 pub fn stub_info() -> pyo3_stub_gen::Result<StubInfo> {
     let manifest_dir: &Path = env!("CARGO_MANIFEST_DIR").as_ref();
