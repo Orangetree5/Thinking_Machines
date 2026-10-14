@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 use board_game_engine::{BoardGame, BoardInfo, Position};
-use generic_board_gui::{BoardSupplier, Cell, Gui};
+use generic_board_gui::{BoardControllers, BoardReceiver, BoardSender, Cell, Gui};
 use iced::Theme;
 use iced::widget::button;
 use iced::widget::button::{Status, Style};
@@ -45,7 +45,7 @@ impl Cell for CoinCell {
     }
 }
 
-impl BoardSupplier<CoinCell> for std::sync::mpsc::Receiver<Vec<Vec<CoinCell>>> {
+impl BoardReceiver<CoinCell> for std::sync::mpsc::Receiver<Vec<Vec<CoinCell>>> {
     fn width(&self) -> u32 {
         // FIXME how should i handle this? maybe dimensions as constants in trait or a
         // constructor in trait
@@ -83,21 +83,30 @@ fn board_info_to_grid(game: &BoardGame) -> Vec<Vec<CoinCell>> {
     grid
 }
 
+struct Controllers {
+    sender: std::sync::mpsc::Sender<Vec<Vec<CoinCell>>>,
+    receiver: std::sync::mpsc::Receiver<Vec<Vec<CoinCell>>>,
+}
+
+impl BoardSender<CoinCell> for std::sync::mpsc::Sender<Vec<Vec<CoinCell>>> {
+
+}
+
+impl BoardControllers<CoinCell,  std::sync::mpsc::Receiver<Vec<Vec<CoinCell>>>, std::sync::mpsc::Sender<Vec<Vec<CoinCell>>>> for Controllers {
+    fn board_controllers(self) -> (std::sync::mpsc::Sender<Vec<Vec<CoinCell>>>, std::sync::mpsc::Receiver<Vec<Vec<CoinCell>>>) {
+        (self.sender, self.receiver)
+    }
+}
+
 fn main() {
-    let (board_sender, board_supplier): (
+    let (board_sender, board_receiver): (
         std::sync::mpsc::Sender<Vec<Vec<CoinCell>>>,
         std::sync::mpsc::Receiver<Vec<Vec<CoinCell>>>,
     ) = std::sync::mpsc::channel();
+    
+    let board_controllers = Controllers { sender: board_sender, receiver: board_receiver};
 
-    let board_supplier = RefCell::new(Some(board_supplier));
-    let gui_new = move || {
-        let supplier = board_supplier
-            .borrow_mut()
-            .take()
-            .expect("Gui initialized more than once");
-
-        Gui::new(supplier)
-    };
+    let (gui, board_sender) = Gui::new(board_controllers);
 
     std::thread::spawn(move || {
         let mut game = BoardGame::new_random(5, 5, 2);
@@ -113,12 +122,10 @@ fn main() {
 
             game.play_turn(board_game_engine::PlayerMove::Up);
 
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            std::thread::sleep(std::time::Duration::from_millis(1));
         }
     });
 
-    iced::application(gui_new, Gui::update, Gui::view)
-        .subscription(Gui::subscription)
-        .run()
-        .unwrap();
+    gui.run_gui();
+
 }
