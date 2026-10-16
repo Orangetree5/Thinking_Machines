@@ -60,7 +60,7 @@ impl BoardGame {
             return Some(TurnResult::CoinFound);
         }
 
-        let distance: Option<u32> = self.distance_to_coin_in_moved_direction(player_move);
+        let distance: Option<u32> = self.distance_to_coin_in_moved_direction(&player_move);
 
         Some(TurnResult::DistanceToCoinInMovingDirection(distance))
     }
@@ -86,7 +86,7 @@ impl BoardGame {
         }
     }
 
-    fn distance_to_coin_in_moved_direction(&self, player_move: PlayerMove) -> Option<u32> {
+    fn distance_to_coin_in_moved_direction(&self, player_move: &PlayerMove) -> Option<u32> {
         match player_move {
             PlayerMove::Up => {
                 for y in self.player_position.y..self.height {
