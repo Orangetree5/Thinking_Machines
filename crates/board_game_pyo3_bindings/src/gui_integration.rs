@@ -88,6 +88,7 @@ impl generic_board_gui::BoardReceiver<CoinCell> for BoardReceiver {
     }
 }
 
+
 #[derive(Clone)]
 #[gen_stub_pyclass]
 #[pyclass]

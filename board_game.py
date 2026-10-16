@@ -17,7 +17,7 @@ def play_game(sender, game: BoardGame):
         cells = board_info_to_grid(game) 
         sender.send(cells)
 
-        sleep(0.5) # Stop for 0.5 second
+        #sleep(0.5) # Stop for 0.5 second
         
 
 def main():
