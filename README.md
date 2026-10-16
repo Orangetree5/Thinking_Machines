@@ -10,4 +10,4 @@ run with:
 
 `uv sync`
 
-`uv run board_game.py` (first run can take some time)
+`uv run python board_game.py` (first run can take some time)
