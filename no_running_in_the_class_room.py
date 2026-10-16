@@ -97,9 +97,10 @@ class ActInfAgent_02:
             self.infer_parameters()
 
             ##### VFE CONVERGENCE CHECK #####
+            state_negative_entropy_time = (self._joint_state_state*(self._joint_state_state.clamp(min=1e-8).log() - self._past_state[:-1, :, None].clamp(min=1e-8).log())).sum(dim=(-1, -2))
+            state_negative_entropy_time += (self._past_state[0]*self._past_state[0].clamp(min=1e-8).log()).sum()
 
-            variational_free_energy_time = (self._past_state[1:] * torch.log(
-                self._past_state[1:].clamp(min=1e-8))).sum(dim=-1) - torch.einsum('tso, so -> t',
+            variational_free_energy_time = state_negative_entropy_time - torch.einsum('tso, so -> t',
                                                                                   self._joint_state_observation,
                                                                                   mean_log_likelihood) - torch.einsum(
                 'tji, tji -> t',
@@ -123,7 +124,7 @@ class ActInfAgent_02:
             self._posterior_transition.concentration[self._all_action_sequences].sum(dim=-1, keepdim=True))
         likelihood = self._posterior_likelihood.mean
         transition = self._posterior_transition.mean[self._all_action_sequences]
-        self._future_state[:,0] = torch.softmax(torch.einsum('pij, i -> pj', transition[:,0], self._past_state[-1]), dim=-1)
+        self._future_state[:,0] = torch.einsum('pij, i -> pj', transition[:,0], self._past_state[-1])
 
         for time in range(1, self._planning_horizon):
             self._future_state[:,time] = torch.einsum('pij, pi -> pj', transition[:,time], self._future_state[:,time-1])
@@ -133,8 +134,8 @@ class ActInfAgent_02:
         joint_state_observation_policy = torch.einsum('so, pts -> ptso', likelihood, self._future_state)
         joint_state_state_policy = torch.einsum('pti, ptij -> ptij', torch.cat([self._past_state[-1].unsqueeze(0).unsqueeze(0).expand(self._amount_of_policies, 1, -1), self._future_state[:,:-1]], dim=1), transition)
 
-        expected_free_energy_policy_time = ((self._future_state * torch.log(
-                self._future_state.clamp(min=1e-8))).sum(dim=-1) + (self._future_observation * torch.log(
+        expected_free_energy_policy_time = ((joint_state_state_policy * torch.log(
+                transition.clamp(min=1e-8))).sum(dim=(-1, -2)) + (self._future_observation * torch.log(
                 self._future_observation.clamp(min=1e-8))).sum(dim=-1) - (self._future_observation * torch.log(
                 self._prior_future_observation.clamp(min=1e-8))).sum(dim=-1) - torch.einsum('ptso, so -> pt',
                                                                                  joint_state_observation_policy,

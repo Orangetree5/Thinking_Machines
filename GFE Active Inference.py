@@ -3,7 +3,7 @@ from no_running_in_the_class_room import *
 amount_of_states = 9
 amount_of_observations = 4
 amount_of_actions = 2
-short_term_memory = 100
+short_term_memory = 500
 planning_horizon = 3
 
 environment = Environment1()
