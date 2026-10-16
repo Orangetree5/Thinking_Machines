@@ -85,11 +85,15 @@ class ActInfAgent_02:
                 forward_message[t] = likelihood[:, self._observation_history[t-1]]*(torch.einsum('ij, i -> j', transition[t-1], forward_message[t-1]))
                 backward_message[-(t+1)] = torch.einsum('ij, j -> i', transition[-t], likelihood[:, self._observation_history[-t]]*backward_message[-t])
 
-            self._past_state = torch.softmax(torch.einsum('ts, ts -> ts', forward_message, backward_message), dim=-1)
+                forward_message[t] = forward_message[t] / forward_message[t].sum().clamp(min=1e-8)
+                backward_message[-(t + 1)] = backward_message[-(t+1)] / backward_message[-(t+1)].sum().clamp(min=1e-8)
+
+            past_state_unnormalised = torch.einsum('ts, ts -> ts', forward_message, backward_message)
+            self._past_state = past_state_unnormalised / past_state_unnormalised.sum(dim=-1, keepdim=True)
             self._joint_state_observation = torch.einsum('to, ts -> tso', past_observations,
                                                          self._past_state[1:])
             joint_state_state_unnormalised = torch.einsum('tij, tj -> tij', torch.einsum('ti, tij, jt -> tij', forward_message[:-1], transition, likelihood[:, self._observation_history]), backward_message[1:])
-            self._joint_state_state = joint_state_state_unnormalised / joint_state_state_unnormalised.sum(dim=(-1, -2), keepdim=True).clamp(min=1e-8)
+            self._joint_state_state = joint_state_state_unnormalised / joint_state_state_unnormalised.sum(dim=(-1, -2), keepdim=True)
             self.infer_parameters()
 
             ##### VFE CONVERGENCE CHECK #####
@@ -117,12 +121,12 @@ class ActInfAgent_02:
         mean_log_transition = torch.digamma(
             self._posterior_transition.concentration[self._all_action_sequences]) - torch.digamma(
             self._posterior_transition.concentration[self._all_action_sequences].sum(dim=-1, keepdim=True))
-        likelihood = torch.exp(mean_log_likelihood)
-        transition = torch.exp(mean_log_transition)
+        likelihood = self._posterior_likelihood.mean
+        transition = self._posterior_transition.mean[self._all_action_sequences]
         self._future_state[:,0] = torch.softmax(torch.einsum('pij, i -> pj', transition[:,0], self._past_state[-1]), dim=-1)
 
         for time in range(1, self._planning_horizon):
-            self._future_state[:,time] = torch.softmax(torch.einsum('pij, pi -> pj', transition[:,time], self._future_state[:,time-1]), dim=-1)
+            self._future_state[:,time] = torch.einsum('pij, pi -> pj', transition[:,time], self._future_state[:,time-1])
         self._future_observation = torch.einsum('so, pts -> pto', likelihood, self._future_state)
 
         ##### EXPECTED FREE ENERGY #####
