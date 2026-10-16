@@ -1,5 +1,13 @@
 # Thinking_Machines
 
+## Installation of tools:
+1. Install [Rust](https://rust-lang.org/tools/install/) (using rustup)
+2. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) 
+
+___
 ## Usage
 run with:
-`uv run -m thinking_machines`
+
+`uv sync`
+
+`uv run board_game.py` (first run can take some time)
