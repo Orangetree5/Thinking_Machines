@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-
 use board_game_engine::{BoardGame, BoardInfo, Position};
 use generic_board_gui::{BoardControllers, BoardReceiver, BoardSender, Cell, Gui};
 use iced::Theme;
@@ -46,16 +44,6 @@ impl Cell for CoinCell {
 }
 
 impl BoardReceiver<CoinCell> for std::sync::mpsc::Receiver<Vec<Vec<CoinCell>>> {
-    fn width(&self) -> u32 {
-        // FIXME how should i handle this? maybe dimensions as constants in trait or a
-        // constructor in trait
-        5
-    }
-
-    fn height(&self) -> u32 {
-        5
-    }
-
     fn recv_board_state_blocking(&self) -> Vec<Vec<CoinCell>> {
         self.recv().unwrap()
     }
@@ -88,9 +76,7 @@ struct Controllers {
     receiver: std::sync::mpsc::Receiver<Vec<Vec<CoinCell>>>,
 }
 
-impl BoardSender<CoinCell> for std::sync::mpsc::Sender<Vec<Vec<CoinCell>>> {
-
-}
+impl BoardSender<CoinCell> for std::sync::mpsc::Sender<Vec<Vec<CoinCell>>> {}
 
 impl BoardControllers<CoinCell,  std::sync::mpsc::Receiver<Vec<Vec<CoinCell>>>, std::sync::mpsc::Sender<Vec<Vec<CoinCell>>>> for Controllers {
     fn board_controllers(self) -> (std::sync::mpsc::Sender<Vec<Vec<CoinCell>>>, std::sync::mpsc::Receiver<Vec<Vec<CoinCell>>>) {
@@ -106,7 +92,7 @@ fn main() {
     
     let board_controllers = Controllers { sender: board_sender, receiver: board_receiver};
 
-    let (gui, board_sender) = Gui::new(board_controllers);
+    let (gui, board_sender) = Gui::new(board_controllers, 5, 5);
 
     std::thread::spawn(move || {
         let mut game = BoardGame::new_random(5, 5, 2);
@@ -127,5 +113,4 @@ fn main() {
     });
 
     gui.run_gui();
-
 }

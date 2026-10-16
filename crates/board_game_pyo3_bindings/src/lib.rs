@@ -4,26 +4,34 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::derive::gen_stub_pymethods;
 use pyo3_stub_gen_derive::gen_stub_pyclass;
 
+pub mod gui_integration;
+
 #[gen_stub_pyclass]
 #[pyclass]
 pub struct BoardGame {
-    game: board_game_engine::BoardGame,
+    pub game: board_game_engine::BoardGame,
 }
 
 #[gen_stub_pymethods]
 #[pymethods]
 impl BoardGame {
     #[new]
-    fn new(width: u32, height: u32, number_of_coins: u32) -> Self {
+    pub fn new(width: u32, height: u32, number_of_coins: u32) -> Self {
         let game = board_game_engine::BoardGame::new_random(width, height, number_of_coins);
 
         Self { game }
     }
 
-    fn play_turn(&mut self, player_move: u32) -> i32 {
+    pub fn play_turn(&mut self, player_move: u32) -> i32 {
         let player_move = encode_player_move(player_move);
 
-        decode_turn_result(self.game.play_turn(player_move).expect("Invalid move!"))
+        let result = self.game.play_turn(player_move);
+
+        if let Some(result) = result {
+            decode_turn_result(result)
+        } else {
+            -2
+        }
     }
 
     fn __str__(&self) -> String {
@@ -54,10 +62,15 @@ fn decode_turn_result(turn_result: TurnResult) -> i32 {
 #[pymodule]
 #[pyo3(name = "_rust")]
 pub mod board_game_py {
-    use pyo3::prelude::*;
 
     #[pymodule_export]
     use super::BoardGame;
+
+    #[pymodule_export]
+    use super::gui_integration::Gui;
+
+    #[pymodule_export]
+    use super::gui_integration::board_info_to_grid;
 }
 
 use pyo3_stub_gen::StubInfo;

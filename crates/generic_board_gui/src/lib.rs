@@ -15,19 +15,15 @@ use iced::widget::{
 };
 use iced::{Alignment, Length, Subscription, Theme};
 
-pub trait BoardReceiver<C: Cell>: Send + 'static {
+pub trait BoardReceiver<C: Cell>: Clone + Send + 'static {
     fn recv_board_state_blocking(&self) -> Vec<Vec<C>>;
-    fn height(&self) -> u32;
-    fn width(&self) -> u32;
 }
 
 pub trait Cell: Clone + Send + Sync + 'static {
     fn style(&self) -> fn(&Theme, Status) -> Style;
 }
 
-pub trait BoardSender<C: Cell>: Send + Sync + 'static {
-
-}
+pub trait BoardSender<C: Cell>: Send + Sync + 'static {}
 
 pub trait BoardControllers<C: Cell, R: BoardReceiver<C>, S: BoardSender<C>> {
     fn board_controllers(self) -> (S, R);
@@ -42,9 +38,17 @@ pub struct Gui<C: Cell, R: BoardReceiver<C>, S: BoardSender<C>> {
     height: u32,
 }
 
+impl<C: Cell, R: BoardReceiver<C>, S: BoardSender<C>> Clone for Gui<C, R, S> {
+    fn clone(&self) -> Self {
+        let Self { board_receiver, _sender, currently_rendering_cells, width, height } = self;
+
+        Self { board_receiver: board_receiver.clone(), _sender: PhantomData, currently_rendering_cells: Arc::clone(currently_rendering_cells), width: *width, height: *height }
+    }
+} 
+
 impl<C: Cell, R: BoardReceiver<C>, S: BoardSender<C>> Gui<C, R, S> {
-    pub fn run_gui(self) -> ! {
-        let s = RefCell::new(Some(self));
+    pub fn run_gui(&mut self) -> ! {
+        let s = RefCell::new(Some((*self).clone()));
 
         let gui_new = move || {
             s
@@ -61,12 +65,12 @@ impl<C: Cell, R: BoardReceiver<C>, S: BoardSender<C>> Gui<C, R, S> {
         unreachable!()
     }
 
-    pub fn new(board_controllers: impl BoardControllers<C, R, S>) -> (Self, S) {
+    pub fn new(board_controllers: impl BoardControllers<C, R, S>, width: u32, height: u32) -> (Self, S) {
         let (sender, board_receiver) = board_controllers.board_controllers();
 
         (Self {
-            width: board_receiver.width(),
-            height: board_receiver.height(),
+            width,
+            height,
             board_receiver: Some(board_receiver),
             currently_rendering_cells: Arc::new(Vec::new()),
             _sender: PhantomData,

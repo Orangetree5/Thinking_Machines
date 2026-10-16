@@ -326,6 +326,8 @@ name = "board_game_py"
 version = "0.1.0"
 dependencies = [
  "board_game_engine",
+ "generic_board_gui",
+ "iced",
  "pyo3",
  "pyo3-stub-gen",
  "pyo3-stub-gen-derive",
