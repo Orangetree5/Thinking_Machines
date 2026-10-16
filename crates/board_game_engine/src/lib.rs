@@ -87,43 +87,50 @@ impl BoardGame {
     }
 
     fn distance_to_coin_in_moved_direction(&self, player_move: PlayerMove) -> Option<u32> {
-        for coin_position in self.coin_positions.iter().copied() {
-            if self.player_position.x == coin_position.x {
-                match player_move {
-                    PlayerMove::Up => {
-                        for (distance, y) in (self.player_position.y..self.height).enumerate() {
-                            if y == coin_position.y {
-                                return Some(distance as u32);
-                            }
-                        }
+        match player_move {
+            PlayerMove::Up => {
+                for y in self.player_position.y..self.height {
+                    let current_pos = Position {x: self.player_position.x, y};
+
+                    if self.coin_positions.contains(&current_pos) {
+                        let distance = y - self.player_position.y;
+                        return Some(distance);
                     }
-                    PlayerMove::Down => {
-                        for (distance, y) in (0..=self.player_position.y).rev().enumerate() {
-                            if y == coin_position.y {
-                                return Some(distance as u32);
-                            }
-                        }
-                    }
-                    _ => {}
                 }
-            } else if self.player_position.y == coin_position.y {
-                match player_move {
-                    PlayerMove::Right => {
-                        for (distance, x) in (self.player_position.x..self.width).enumerate() {
-                            if x == coin_position.x {
-                                return Some(distance as u32);
-                            }
-                        }
+            }
+
+            PlayerMove::Down => {
+                for y in (0..=self.player_position.y).rev() {
+                    let current_pos = Position {x: self.player_position.x, y};
+
+                    if self.coin_positions.contains(&current_pos) {
+                        let distance = self.player_position.y - y;
+                        return Some(distance);
                     }
-                    PlayerMove::Left => {
-                        for (distance, x) in (0..=self.player_position.x).rev().enumerate() {
-                            if x == coin_position.x {
-                                return Some(distance as u32);
-                            }
-                        }
-                    }
-                    _ => {}
                 }
+            }
+
+            PlayerMove::Right => {
+                for x in self.player_position.x..self.width {
+                    let current_pos = Position {x, y: self.player_position.y};
+
+                    if self.coin_positions.contains(&current_pos) {
+                        let distance = x - self.player_position.x;
+                        return Some(distance);
+                    }
+                }
+            }
+
+            PlayerMove::Left => {
+                for x in (0..=self.player_position.x).rev() {
+                    let current_pos = Position {x, y: self.player_position.y};
+
+                    if self.coin_positions.contains(&current_pos) {
+                        let distance = self.player_position.x - x;
+                        return Some(distance);
+                    }
+                }
+
             }
         }
 
@@ -266,6 +273,26 @@ mod tests {
 
         println!("{}", board_game);
     }
+
+        #[test]
+    fn test_game_double_distance_right() {
+        let mut board_game =
+            BoardGame::new(5, 5, vec![Position { x: 4, y: 2 }, Position { x: 3, y: 2 }], Position { x: 1, y: 2 });
+
+        let result = board_game.play_turn(PlayerMove::Right).unwrap();
+
+        match result {
+            TurnResult::DistanceToCoinInMovingDirection(distance) => {
+                let distance = distance.unwrap();
+
+                assert_eq!(distance, 1);
+            }
+            _ => panic!("Should got distance"),
+        }
+
+        println!("{}", board_game);
+    }
+
 
     #[test]
     fn test_game_distance_right() {
