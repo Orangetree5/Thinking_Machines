@@ -1,0 +1,12 @@
+[workspace]
+members = ["crates/board_game_engine","crates/board_game_pyo3_bindings", "crates/generic_board_gui"]
+
+resolver = "3"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1 
+panic = "abort"
+strip = true  
+

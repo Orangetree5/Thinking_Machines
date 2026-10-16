@@ -17,15 +17,23 @@ dependencies = [
 thinking-machines = "thinking_machines:main"
 
 [build-system]
-requires = ["uv_build>=0.12.19,<0.13.0"]
-build-backend = "uv_build"
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+manifest-path = "crates/board_game_pyo3_bindings/Cargo.toml"
+python-source = "src"
+module-name = "thinking_machines._rust"
+bindings-type = "pyo3"
 
 [dependency-groups]
 dev = [
     "ruff>=0.16.10",
+    "maturin>=1.5,<2.0",
 ]
 
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
 typeCheckingMode = "basic"
+
