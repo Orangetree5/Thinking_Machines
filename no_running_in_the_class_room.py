@@ -71,15 +71,17 @@ class ActInfAgent_02:
         prev_vfe = float("inf")
         past_observations = F.one_hot(self._observation_history, num_classes=self._amount_of_observations)
 
+        mean_log_likelihood = torch.digamma(self._posterior_likelihood.concentration) - torch.digamma(
+            self._posterior_likelihood.concentration.sum(dim=-1, keepdim=True))
+        mean_log_transition = torch.digamma(
+            self._posterior_transition.concentration[self._action_history]) - torch.digamma(
+            self._posterior_transition.concentration[self._action_history].sum(dim=-1, keepdim=True))
+        likelihood = torch.exp(mean_log_likelihood)
+        transition = torch.exp(mean_log_transition)
+
         for index in range(upper_limit):
             forward_message = torch.softmax(torch.zeros(self._past_state.size(0), self._amount_of_states), dim=-1)
             backward_message = torch.softmax(torch.zeros(self._past_state.size(0), self._amount_of_states), dim=-1)
-            mean_log_likelihood = torch.digamma(self._posterior_likelihood.concentration) - torch.digamma(self._posterior_likelihood.concentration.sum(dim=-1, keepdim=True))
-            mean_log_transition = torch.digamma(
-                self._posterior_transition.concentration[self._action_history]) - torch.digamma(
-                self._posterior_transition.concentration[self._action_history].sum(dim=-1, keepdim=True))
-            likelihood = torch.exp(mean_log_likelihood)
-            transition = torch.exp(mean_log_transition)
 
             for t in range(1, forward_message.size(0)):
                 forward_message[t] = likelihood[:, self._observation_history[t-1]]*(torch.einsum('ij, i -> j', transition[t-1], forward_message[t-1]))
@@ -97,8 +99,16 @@ class ActInfAgent_02:
             self.infer_parameters()
 
             ##### VFE CONVERGENCE CHECK #####
+            mean_log_likelihood = torch.digamma(self._posterior_likelihood.concentration) - torch.digamma(
+                self._posterior_likelihood.concentration.sum(dim=-1, keepdim=True))
+            mean_log_transition = torch.digamma(
+                self._posterior_transition.concentration[self._action_history]) - torch.digamma(
+                self._posterior_transition.concentration[self._action_history].sum(dim=-1, keepdim=True))
+            likelihood = torch.exp(mean_log_likelihood)
+            transition = torch.exp(mean_log_transition)
+
             state_negative_entropy_time = (self._joint_state_state*(self._joint_state_state.clamp(min=1e-8).log() - self._past_state[:-1, :, None].clamp(min=1e-8).log())).sum(dim=(-1, -2))
-            state_negative_entropy_time += (self._past_state[0]*self._past_state[0].clamp(min=1e-8).log()).sum()
+            state_negative_entropy_time[0] += (self._past_state[0]*self._past_state[0].clamp(min=1e-8).log()).sum()
 
             variational_free_energy_time = state_negative_entropy_time - torch.einsum('tso, so -> t',
                                                                                   self._joint_state_observation,
