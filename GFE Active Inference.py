@@ -1,20 +1,19 @@
-import torch
-import torch.nn.functional as F
-import random
 from no_running_in_the_class_room import *
 
-amount_of_states = 9
-amount_of_observations = 4
+amount_of_states = 2
+amount_of_observations = 2
 amount_of_actions = 2
-short_term_memory = 200
+short_term_memory = 100
 planning_horizon = 3
 
-environment = Environment1()
-agent = ActInfAgent(amount_of_states, amount_of_observations, amount_of_actions, short_term_memory, planning_horizon)
+environment = Environment2()
+agent = ActInfAgent_02(amount_of_states, amount_of_observations, amount_of_actions, short_term_memory, planning_horizon)
+
 agent.initialise_preferences(0, 5)
 agent.initialise_preferences(1, -5)
+agent.initialise_preferences(internalise=True)
 
 while True:
     agent.commit_to_memory(environment.play_turn(agent.action))
-    agent.infer_present(rounds=20)
+    agent.infer_past()
     agent.infer_future()
