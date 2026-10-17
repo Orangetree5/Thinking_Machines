@@ -5,9 +5,8 @@ import threading
 
 
 def play_game(sender, game: BoardGame):
-    try: 
-        while True:
-            # Noah put your action logic here
+    while True:
+        # Noah put your action logic here
 
             # 0: Up, 1: Right, 2: Down, 3: Left
             move = 2
@@ -20,10 +19,6 @@ def play_game(sender, game: BoardGame):
 
             sleep(0.3) # Stop for 0.3 second
             
-    except Exception as e:
-        print("--- BACKGROUND THREAD CRASHED ---")
-        traceback.print_exc()
-
 def main():
     gui = Gui()
 
