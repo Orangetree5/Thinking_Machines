@@ -9,7 +9,7 @@ import pygame
 
 
 class ActInfAgent_02:
-    def __init__(self, amount_of_states, amount_of_observations, amount_of_actions, short_term_memory, planning_horizon, forgetfulness=0.001):
+    def __init__(self, amount_of_states, amount_of_observations, amount_of_actions, short_term_memory, planning_horizon, forgetfulness=0.05):
         self._chosen_policy = None
         self._amount_of_states = amount_of_states
         self._amount_of_observations = amount_of_observations
@@ -144,18 +144,113 @@ class ActInfAgent_02:
         joint_state_observation_policy = torch.einsum('so, pts -> ptso', likelihood, self._future_state)
         joint_state_state_policy = torch.einsum('pti, ptij -> ptij', torch.cat([self._past_state[-1].unsqueeze(0).unsqueeze(0).expand(self._amount_of_policies, 1, -1), self._future_state[:,:-1]], dim=1), transition)
 
-        expected_free_energy_policy_time = ((joint_state_state_policy * torch.log(
-                transition.clamp(min=1e-8))).sum(dim=(-1, -2)) + (self._future_observation * torch.log(
-                self._future_observation.clamp(min=1e-8))).sum(dim=-1) - (self._future_observation * torch.log(
-                self._prior_future_observation.clamp(min=1e-8))).sum(dim=-1) - torch.einsum('ptso, so -> pt',
-                                                                                 joint_state_observation_policy,
-                                                                                 mean_log_likelihood) - torch.einsum(
-                'ptji, ptji -> pt',
-                joint_state_state_policy, mean_log_transition))
+#        expected_free_energy_policy_time = -((joint_state_state_policy * torch.log(
+#                transition.clamp(min=1e-8))).sum(dim=(-1, -2)) + (self._future_observation * torch.log(
+#                self._future_observation.clamp(min=1e-8))).sum(dim=-1) - (self._future_observation * torch.log(
+#                self._prior_future_observation.clamp(min=1e-8))).sum(dim=-1) - torch.einsum('ptso, so -> pt',
+#                                                                                 joint_state_observation_policy,
+#                                                                                 mean_log_likelihood) - torch.einsum(
+#                'ptji, ptji -> pt',
+#                joint_state_state_policy, mean_log_transition))
+#
+#        expected_free_energy_policy = expected_free_energy_policy_time.sum(dim=-1)
+#
+        ### Deepseek suggestion ###
+
+        expected_free_energy_policy_time = (
+                (self._future_observation * torch.log(self._future_observation.clamp(min=1e-8))).sum(dim=-1)
+                - (self._future_observation * torch.log(self._prior_future_observation.clamp(min=1e-8))).sum(dim=-1)
+                - torch.einsum('ptso, so -> pt',
+                               joint_state_observation_policy,
+                               mean_log_likelihood)
+        )
 
         expected_free_energy_policy = expected_free_energy_policy_time.sum(dim=-1)
 
+        ###########################
+
         self._posterior_policy = torch.softmax(torch.log(self._prior_policy.clamp(min=1e-8)) - expected_free_energy_policy, dim=-1)
+        self._chosen_policy = torch.multinomial(self._posterior_policy, num_samples=1).item()
+        self.action = self._all_action_sequences[int(self._chosen_policy)][0]
+
+    def infer_future_deepseek(self):
+        ### Mean parameter estimates (for rollouts and predictive distributions) ###
+        likelihood_mean = self._posterior_likelihood.mean                                    # (S, O)
+        transition_mean = self._posterior_transition.mean[self._all_action_sequences]        # (P, H, S, S)
+
+        ### Unshifted digamma expectations E_q(θ)[ln p] — used for ambiguity ###
+        mean_log_likelihood = (
+            torch.digamma(self._posterior_likelihood.concentration)
+            - torch.digamma(self._posterior_likelihood.concentration.sum(dim=-1, keepdim=True))
+        )                                                                                    # (S, O)
+        mean_log_transition = (
+            torch.digamma(self._posterior_transition.concentration[self._all_action_sequences])
+            - torch.digamma(
+                self._posterior_transition.concentration[self._all_action_sequences]
+                    .sum(dim=-1, keepdim=True))
+        )                                                                                    # (P, H, S, S)
+
+        ### Shifted digamma expectations E_q(θ)[ln p] with ψ(·+1) — used for exact Dirichlet EIG ###
+        mean_log_likelihood_shifted = (
+            torch.digamma(self._posterior_likelihood.concentration + 1.0)
+            - torch.digamma(self._posterior_likelihood.concentration.sum(dim=-1, keepdim=True) + 1.0)
+        )                                                                                    # (S, O)
+        mean_log_transition_shifted = (
+            torch.digamma(self._posterior_transition.concentration[self._all_action_sequences] + 1.0)
+            - torch.digamma(
+                self._posterior_transition.concentration[self._all_action_sequences]
+                    .sum(dim=-1, keepdim=True) + 1.0)
+        )                                                                                    # (P, H, S, S)
+
+        ### Roll out future states and observations under the mean model ###
+        self._future_state[:, 0] = torch.einsum('pij, i -> pj', transition_mean[:, 0], self._past_state[-1])
+        for time in range(1, self._planning_horizon):
+            self._future_state[:, time] = torch.einsum(
+                'pij, pi -> pj', transition_mean[:, time], self._future_state[:, time - 1])
+        self._future_observation = torch.einsum('so, pts -> pto', likelihood_mean, self._future_state)
+
+        ### Joint predictive distributions q(s_t, o_t | π) and q(s_{t-1}, s_t | π) ###
+        joint_state_observation_policy = torch.einsum(
+            'so, pts -> ptso', likelihood_mean, self._future_state)                          # (P, H, S, O)
+
+        previous_state = torch.cat(
+            [self._past_state[-1].unsqueeze(0).unsqueeze(0).expand(self._amount_of_policies, 1, -1),
+             self._future_state[:, :-1]], dim=1)                                             # (P, H, S)
+        joint_state_state_policy = torch.einsum(
+            'pti, ptij -> ptij', previous_state, transition_mean)                            # (P, H, S, S)
+
+        ##### EXPECTED FREE ENERGY #####
+        # 1) Risk / exploitation:  D_KL[ q(o|π) || p(o) ]
+        risk = (
+            (self._future_observation * torch.log(self._future_observation.clamp(min=1e-8))).sum(dim=-1)
+            - (self._future_observation * torch.log(self._prior_future_observation.clamp(min=1e-8))).sum(dim=-1)
+        )                                                                                    # (P, H)
+
+        # 2) Likelihood ambiguity:  E_q(s,o|π)[ -ln p(o|s,θ_o) ]
+        ambiguity = -torch.einsum(
+            'ptso, so -> pt', joint_state_observation_policy, mean_log_likelihood)           # (P, H)
+
+        # 3) Expected information gain about the likelihood parameters θ_o
+        #    EIG_o = Σ_{s,o} q(s|π) L̄(s,o) [ ψ(α_so+1) − ψ(α_s0+1) − ln L̄(s,o) ]
+        eig_o = torch.einsum(
+            'ptso, so -> pt',
+            joint_state_observation_policy,
+            mean_log_likelihood_shifted - torch.log(likelihood_mean.clamp(min=1e-8)))        # (P, H)
+
+        # 4) Expected information gain about the transition parameters θ_t
+        #    EIG_t = Σ_{s,s'} q(s,s'|π) [ ψ(β+1) − ψ(β_0+1) − ln T̄(s,s') ]
+        eig_t = torch.einsum(
+            'ptji, ptji -> pt',
+            joint_state_state_policy,
+            mean_log_transition_shifted - torch.log(transition_mean.clamp(min=1e-8)))        # (P, H)
+
+        # Total EFE: minimise risk + ambiguity, maximise both information gains
+        expected_free_energy_policy_time = risk + ambiguity - eig_o - eig_t
+
+        expected_free_energy_policy = expected_free_energy_policy_time.sum(dim=-1)
+
+        self._posterior_policy = torch.softmax(
+            torch.log(self._prior_policy.clamp(min=1e-8)) - expected_free_energy_policy, dim=-1)
         self._chosen_policy = torch.multinomial(self._posterior_policy, num_samples=1).item()
         self.action = self._all_action_sequences[int(self._chosen_policy)][0]
 
@@ -556,7 +651,7 @@ class Environment3:
         self._loss = 0
         self._board_size = board_size
         self._cell = cell_size
-        self._coin   = torch.tensor([random.randint(0, board_size - 1),
+        self._coin = torch.tensor([random.randint(0, board_size - 1),
                                      random.randint(0, board_size - 1)])
         self._player = torch.tensor([random.randint(0, board_size - 1),
                                      random.randint(0, board_size - 1)])
