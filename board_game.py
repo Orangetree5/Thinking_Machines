@@ -1,6 +1,7 @@
-from thinking_machines import BoardGame, Gui, board_info_to_grid
 from time import sleep
+from thinking_machines import BoardGame, Gui
 import threading
+
 
 def play_game(sender, game: BoardGame):
     while True:
@@ -11,17 +12,15 @@ def play_game(sender, game: BoardGame):
 
         # result = 0: "found coin", -1: "No coin in this direction", -2: "Invalid moving direction", n: "Distance to coin in moved direction"
         result = game.play_turn(move)
-
         print(result)
 
-        cells = board_info_to_grid(game) 
-        sender.send(cells)
+        sender.send(game)
 
-        #sleep(0.5) # Stop for 0.5 second
+        sleep(0.3) # Stop for 0.3 second
         
 
 def main():
-    gui = Gui(width=10, height=10)
+    gui = Gui()
 
     board_sender = gui.board_sender
 

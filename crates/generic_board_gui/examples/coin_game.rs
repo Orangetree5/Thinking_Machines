@@ -83,15 +83,12 @@ pub struct BoardReceiver {
 impl generic_board_gui::BoardReceiver<CoinCell> for BoardReceiver {
     type BoardInfo = Info;
 
-    fn recv_board_state(
+    async fn recv_board_state(
         &self,
-    ) -> impl std::future::Future<Output = Option<Info>> + Send
-    {
-        async move {
-            let mut lock = self.receiver.lock().await;
+    ) -> Option<Info> {
+        let mut lock = self.receiver.lock().await;
 
-            lock.recv().await
-        }
+        lock.recv().await
     }
 }
 
