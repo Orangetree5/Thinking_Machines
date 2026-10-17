@@ -20,7 +20,7 @@ def play_game(sender, game: BoardGame, agent):
             
 def main():
     ### AGENT INITIALISATION ###
-    amount_of_states = 10
+    amount_of_states = 5
     amount_of_observations = 20
     amount_of_actions = 4
     short_term_memory = 500
@@ -33,7 +33,7 @@ def main():
     agent.initialise_preferences(1, -5)
     agent.initialise_preferences(2, 5)
     for index in range(3, amount_of_observations):
-        agent.initialise_preferences(index, 4-8*((index-3)/amount_of_observations-1))
+        agent.initialise_preferences(index, 4-8*((index-3)/amount_of_observations-4))
     agent.initialise_preferences(internalise=True)
     ############################
 
