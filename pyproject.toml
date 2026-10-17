@@ -26,6 +26,9 @@ python-source = "src"
 module-name = "thinking_machines._rust"
 bindings-type = "pyo3"
 
+[tool.uv]
+cache-keys = [{file = "pyproject.toml"}, {file = "Cargo.toml"}, {file = "**/*.rs"}]
+
 [dependency-groups]
 dev = [
     "ruff>=0.16.10",

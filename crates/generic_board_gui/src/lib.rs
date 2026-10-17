@@ -1,12 +1,3 @@
-use std::cell::RefCell;
-use std::marker::PhantomData;
-use std::sync::Arc;
-
-use iced::futures::Stream;
-use iced::futures::channel::mpsc;
-use iced::futures::channel::mpsc::{Receiver, Sender};
-use iced::futures::sink::SinkExt;
-use iced::stream;
 use iced::widget::button;
 use iced::widget::{
     Container,
@@ -14,9 +5,19 @@ use iced::widget::{
     column, container, row,
 };
 use iced::{Alignment, Length, Subscription, Theme};
+use std::cell::RefCell;
+use std::marker::PhantomData;
+use std::sync::Arc;
 
-pub trait BoardReceiver<C: Cell>: Clone + Send + 'static {
-    fn recv_board_state_blocking(&self) -> Vec<Vec<C>>;
+pub trait BoardInfo<C: Cell>: Clone + Send + 'static {
+    fn update_grid_inplace(&self, grid: &mut Vec<Vec<C>>);
+}
+
+pub trait BoardReceiver<C: Cell>: Send + Sync + 'static {
+    type BoardInfo: BoardInfo<C>;
+
+    fn recv_board_state(&self)
+    -> impl std::future::Future<Output = Option<Self::BoardInfo>> + Send;
 }
 
 pub trait Cell: Clone + Send + Sync + 'static {
@@ -29,30 +30,21 @@ pub trait BoardControllers<C: Cell, R: BoardReceiver<C>, S: BoardSender<C>> {
     fn board_controllers(self) -> (S, R);
 }
 
-pub struct Gui<C: Cell, R: BoardReceiver<C>, S: BoardSender<C>> {
-    board_receiver: Option<R>,
+pub struct Gui<C: Cell, R: BoardReceiver<C, BoardInfo = I>, S: BoardSender<C>, I: BoardInfo<C>> {
+    board_receiver: Arc<R>,
     _sender: PhantomData<S>,
 
-    currently_rendering_cells: Arc<Vec<Vec<C>>>,
-    width: u32,
-    height: u32,
+    currently_rendering_cells: Vec<Vec<C>>,
 }
 
-impl<C: Cell, R: BoardReceiver<C>, S: BoardSender<C>> Clone for Gui<C, R, S> {
-    fn clone(&self) -> Self {
-        let Self { board_receiver, _sender, currently_rendering_cells, width, height } = self;
-
-        Self { board_receiver: board_receiver.clone(), _sender: PhantomData, currently_rendering_cells: Arc::clone(currently_rendering_cells), width: *width, height: *height }
-    }
-} 
-
-impl<C: Cell, R: BoardReceiver<C>, S: BoardSender<C>> Gui<C, R, S> {
-    pub fn run_gui(&mut self) -> ! {
-        let s = RefCell::new(Some((*self).clone()));
+impl<C: Cell, R: BoardReceiver<C, BoardInfo = I>, S: BoardSender<C>, I: BoardInfo<C>>
+    Gui<C, R, S, I>
+{
+    pub fn run_gui(self) -> ! {
+        let s = RefCell::new(Some(self));
 
         let gui_new = move || {
-            s
-                .borrow_mut()
+            s.borrow_mut()
                 .take()
                 .expect("Gui initialized more than once")
         };
@@ -65,85 +57,73 @@ impl<C: Cell, R: BoardReceiver<C>, S: BoardSender<C>> Gui<C, R, S> {
         unreachable!()
     }
 
-    pub fn new(board_controllers: impl BoardControllers<C, R, S>, width: u32, height: u32) -> (Self, S) {
+    pub fn new(board_controllers: impl BoardControllers<C, R, S>) -> (Self, S) {
         let (sender, board_receiver) = board_controllers.board_controllers();
 
-        (Self {
-            width,
-            height,
-            board_receiver: Some(board_receiver),
-            currently_rendering_cells: Arc::new(Vec::new()),
-            _sender: PhantomData,
-        }, sender)
+        (
+            Self {
+                board_receiver: Arc::new(board_receiver),
+                currently_rendering_cells: Vec::new(),
+                _sender: PhantomData,
+            },
+            sender,
+        )
     }
 
-    pub fn update(&mut self, message: Message<C, R>) {
+    pub fn update(&mut self, message: Message<C, I>) {
         match message {
-            Message::NewBoardState(new_cells) => {
-                self.currently_rendering_cells = new_cells;
+            Message::NewBoardInfo(new_cells) => {
+                let old_cells = &mut self.currently_rendering_cells;
+
+                new_cells.update_grid_inplace(old_cells);
             }
-            Message::TxReady(mut sender) => {
-                sender
-                    .try_send(
-                        self.board_receiver
-                            .take()
-                            .expect("supplier should have been initialized"),
-                    )
-                    .expect("Couldnt send");
-            }
+
+            Message::_Cell(_) => unreachable!(),
         }
     }
 
-    pub fn subscription(&self) -> Subscription<Message<C, R>> {
-        fn sub<C: Cell, R: BoardReceiver<C>>() -> impl Stream<Item = Message<C, R>> {
-            stream::channel(1, async |mut output| {
-                let (sender, mut receiver) = mpsc::channel(1);
+    pub fn subscription(&self) -> Subscription<Message<C, I>> {
+        pub struct BoardReceiverHashable<C: Cell, R: BoardReceiver<C>>(Arc<R>, PhantomData<C>);
+        impl<C: Cell, R: BoardReceiver<C>> std::hash::Hash for BoardReceiverHashable<C, R> {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                std::ptr::hash(Arc::as_ptr(&self.0), state);
+            }
+        }
 
-                output
-                    .send(Message::TxReady(sender))
-                    .await
-                    .expect("couldnt send TxReady message");
+        let board_receiver = BoardReceiverHashable(Arc::clone(&self.board_receiver), PhantomData);
 
-                let (board_tx, mut board_rx) = tokio::sync::mpsc::channel(1);
+        Subscription::run_with(board_receiver, |board_receiver| {
+            let BoardReceiverHashable(board_receiver, _) = board_receiver;
+            let board_receiver = Arc::clone(board_receiver);
 
-                let board_receiver: R = receiver.recv().await.unwrap();
-                std::thread::spawn(move || {
-                    loop {
-                        let new_cells = board_receiver.recv_board_state_blocking();
-
-                        if board_tx.blocking_send(new_cells).is_err() {
-                            return;
-                        }
+            async_stream::stream! {
+                loop {
+                    if let Some(board_info) = board_receiver.recv_board_state().await {
+                        yield Message::NewBoardInfo(board_info);
                     }
-                });
-
-                while let Some(new_cells) = board_rx.recv().await {
-                    output
-                        .send(Message::NewBoardState(Arc::new(new_cells)))
-                        .await
-                        .unwrap();
                 }
-            })
-        }
-
-        Subscription::run(sub)
+            }
+        })
     }
 
-    pub fn view(&self) -> iced::Element<'_, Message<C, R>> {
+    pub fn view(&self) -> iced::Element<'_, Message<C, I>> {
         let board = self.board_container();
 
         board.into()
     }
 
-    fn board_container(&self) -> Container<'_, Message<C, R>> {
+    fn board_container(&self) -> Container<'_, Message<C, I>> {
+        let height = self.currently_rendering_cells.len();
+        let width = self.currently_rendering_cells.first().map(|row| row.len()).unwrap_or(0);
+
         let mut board_layout = column![].spacing(1);
 
-        for y in (0..self.height).rev() {
+        for y in (0..height).rev() {
             let mut row_layout = row![].spacing(1);
 
-            for x in 0..self.width {
-                let cell = if let Some(row) = self.currently_rendering_cells.get(y as usize)
-                    && let Some(cell) = row.get(x as usize)
+            for x in 0..width {
+                let cell = if let Some(row) = self.currently_rendering_cells.get(y)
+                    && let Some(cell) = row.get(x)
                 {
                     cell
                 } else {
@@ -171,17 +151,9 @@ impl<C: Cell, R: BoardReceiver<C>, S: BoardSender<C>> Gui<C, R, S> {
     }
 }
 
-pub enum Message<C: Cell, R: BoardReceiver<C>> {
-    TxReady(Sender<R>),
-    NewBoardState(Arc<Vec<Vec<C>>>),
-}
+#[derive(Debug, Clone)]
+pub enum Message<C: Cell, I: BoardInfo<C>> {
+    NewBoardInfo(I),
 
-impl<C: Cell, R: BoardReceiver<C>> Clone for Message<C, R> {
-    fn clone(&self) -> Self {
-        match self {
-            Message::NewBoardState(cells) => Self::NewBoardState(Arc::clone(cells)),
-            // FIXME What the fux
-            Message::TxReady(_sender) => panic!("Cant clone BoardReceiver"),
-        }
-    }
+    _Cell(PhantomData<C>),
 }

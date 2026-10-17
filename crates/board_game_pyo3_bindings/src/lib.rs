@@ -7,14 +7,14 @@ use pyo3_stub_gen_derive::gen_stub_pyclass;
 pub mod gui_integration;
 
 #[gen_stub_pyclass]
-#[pyclass]
-pub struct BoardGame {
+#[pyclass(name = "BoardGame")]
+pub struct BoardGamePy {
     pub game: board_game_engine::BoardGame,
 }
 
 #[gen_stub_pymethods]
 #[pymethods]
-impl BoardGame {
+impl BoardGamePy {
     #[new]
     pub fn new(width: u32, height: u32, number_of_coins: u32) -> Self {
         let game = board_game_engine::BoardGame::new_random(width, height, number_of_coins);
@@ -64,13 +64,10 @@ fn decode_turn_result(turn_result: TurnResult) -> i32 {
 pub mod board_game_py {
 
     #[pymodule_export]
-    use super::BoardGame;
+    use super::BoardGamePy;
 
     #[pymodule_export]
-    use super::gui_integration::Gui;
-
-    #[pymodule_export]
-    use super::gui_integration::board_info_to_grid;
+    use super::gui_integration::bindings::GuiPy;
 }
 
 use pyo3_stub_gen::StubInfo;

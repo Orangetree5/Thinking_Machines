@@ -137,8 +137,8 @@ impl BoardGame {
         None
     }
 
-    pub fn get_board_info<'a>(&'a self) -> BoardInfo<'a> {
-        BoardInfo { coin_positions: self.coin_positions.as_ref(), player_position: &self.player_position, width: self.width, height: self.height }
+    pub fn get_board_info(&self) -> BoardInfo {
+        BoardInfo { coin_positions: self.coin_positions.to_vec(), player_position: self.player_position, width: self.width, height: self.height }
     }
 
     fn move_player(&self, player_move: &PlayerMove) -> Option<Position> {
@@ -187,9 +187,10 @@ impl BoardGame {
     }
 }
 
-pub struct BoardInfo<'a> {
-    pub coin_positions: &'a [Position],
-    pub player_position: &'a Position,
+#[derive(Clone)]
+pub struct BoardInfo {
+    pub coin_positions: Vec<Position>,
+    pub player_position: Position,
     pub height: u32,
     pub width: u32,
 }
