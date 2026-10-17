@@ -31,12 +31,15 @@ impl GuiPy {
         Self {gui, board_sender}
     }
 
-    pub fn run_gui(&mut self) {
+    pub fn run_gui(&mut self, py: Python<'_>) {
         let mut gui = self.gui.lock().unwrap();
 
         let gui = gui.take().expect("Gui has already been run!");
 
-        gui.run_gui();
+        // Release the GIL here so other Python threads can run!
+        py.detach(move || {
+            gui.run_gui();
+        });
     }
 }
 

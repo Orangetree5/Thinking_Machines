@@ -7,10 +7,10 @@ authors = [
     { name = "Noah Mayer" },
     { name = "Kilian Achterberg" }
 ]
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.5.3",
-    "torch>=2.14.1",
+    "torch==2.2.2",
 ]
 
 [project.scripts]
