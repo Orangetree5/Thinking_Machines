@@ -1,5 +1,9 @@
 use rand::{RngExt, rngs::ThreadRng};
 
+use crate::tps::Tps;
+
+mod tps;
+
 pub struct BoardGame {
     width: u32,
     height: u32,
@@ -7,6 +11,8 @@ pub struct BoardGame {
     coin_positions: Vec<Position>,
     view_positions: Vec<(Position, u32)>,
     player_position: Position,
+
+    tps: Tps,
 }
 
 impl BoardGame {
@@ -24,6 +30,7 @@ impl BoardGame {
             height,
             coin_positions,
             player_position,
+            tps: Tps::new(),
         }
     }
 
@@ -47,6 +54,8 @@ impl BoardGame {
     }
 
     pub fn play_turn(&mut self, player_move: PlayerMove) -> Option<TurnResult> {
+        self.tps.update();
+
         self.player_position = self.move_player(&player_move)?;
 
         let mut index_coin_to_remove = None;
@@ -169,10 +178,30 @@ impl BoardGame {
     }
 
     pub fn get_board_info(&self) -> BoardInfo {
+        fn format_duration(d: std::time::Duration) -> String {
+            let total_secs = d.as_secs();
+            let minutes = total_secs / 60;
+            let seconds = total_secs % 60;
+
+            format!("{:02}:{:02}", minutes, seconds)
+        }
+
+        let current_tps = self.tps.current_tps();
+        let average_tps = self.tps.average_tps();
+
+        print!(
+            "\rCurrent TPS: {:.2}, Average TPS: {:.2}, Total time elapsed: {}",
+            current_tps,
+            average_tps,
+            format_duration(self.tps.total_time_elapsed())
+        );
+
         BoardInfo {
             coin_positions: self.coin_positions.to_vec(),
             view_positions: self.view_positions.to_vec(),
             player_position: self.player_position,
+            current_tps,
+            average_tps,
             width: self.width,
             height: self.height,
         }
@@ -229,6 +258,8 @@ pub struct BoardInfo {
     pub coin_positions: Vec<Position>,
     pub view_positions: Vec<(Position, u32)>,
     pub player_position: Position,
+    pub current_tps: f32,
+    pub average_tps: f32,
     pub height: u32,
     pub width: u32,
 }

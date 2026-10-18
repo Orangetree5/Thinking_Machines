@@ -36,7 +36,8 @@ impl BoardGamePy {
 
     fn __str__(&self) -> String {
         self.game.to_string()
-    } }
+    }
+}
 
 fn encode_player_move(number: u32) -> PlayerMove {
     match number {

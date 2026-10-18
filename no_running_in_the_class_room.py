@@ -183,12 +183,12 @@ class ActInfAgent_02:
             torch.digamma(self._posterior_likelihood.concentration)
             - torch.digamma(self._posterior_likelihood.concentration.sum(dim=-1, keepdim=True))
         )                                                                                    # (S, O)
-        mean_log_transition = (
-            torch.digamma(self._posterior_transition.concentration[self._all_action_sequences])
-            - torch.digamma(
-                self._posterior_transition.concentration[self._all_action_sequences]
-                    .sum(dim=-1, keepdim=True))
-        )                                                                                    # (P, H, S, S)
+        #mean_log_transition = (
+            #torch.digamma(self._posterior_transition.concentration[self._all_action_sequences])
+            #- torch.digamma(
+                #self._posterior_transition.concentration[self._all_action_sequences]
+                    #.sum(dim=-1, keepdim=True))
+        #)                                                                                    # (P, H, S, S)
 
         ### Shifted digamma expectations E_q(θ)[ln p] with ψ(·+1) — used for exact Dirichlet EIG ###
         mean_log_likelihood_shifted = (
