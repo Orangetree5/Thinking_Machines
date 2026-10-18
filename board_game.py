@@ -8,7 +8,7 @@ from no_running_in_the_class_room import *
 def play_game(sender, game: BoardGame, agent):
     while True:
         action = agent.action
-        observation = 2+game.play_turn(action)
+        observation = game.play_turn(action)
  
         agent.commit_to_memory(observation)
         sender.send(game)
