@@ -32,14 +32,14 @@ impl Cell for CoinCell {
                 r: 0.8,
                 g: 0.7,
                 b: 0.1,
-                text: "C".to_string(),
+                text: "".to_string(),
             },
 
             CoinCell::Player => generic_board_gui::CellStyle {
                 r: 1.0,
                 g: 0.1,
                 b: 0.1,
-                text: "P".to_string(),
+                text: "".to_string(),
             },
         }
     }
