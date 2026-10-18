@@ -4,7 +4,10 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::derive::gen_stub_pymethods;
 use pyo3_stub_gen_derive::gen_stub_pyclass;
 
-use crate::{BoardGamePy, gui_integration::{BoardController, BoardReceiver, BoardSender, CoinCell, Info}};
+use crate::{
+    BoardGamePy,
+    gui_integration::{BoardController, BoardReceiver, BoardSender, CoinCell, Info},
+};
 
 #[gen_stub_pyclass]
 #[pyclass(name = "Gui")]
@@ -28,7 +31,7 @@ impl GuiPy {
 
         let board_sender = BoardSenderPy { sender };
 
-        Self {gui, board_sender}
+        Self { gui, board_sender }
     }
 
     pub fn run_gui(&mut self, py: Python<'_>) {

@@ -5,6 +5,7 @@ pub struct BoardGame {
     height: u32,
 
     coin_positions: Vec<Position>,
+    view_positions: Vec<(Position, u32)>,
     player_position: Position,
 }
 
@@ -15,7 +16,10 @@ impl BoardGame {
         coin_positions: Vec<Position>,
         player_position: Position,
     ) -> Self {
+        let cap = width.max(height);
+
         Self {
+            view_positions: Vec::with_capacity(cap as usize - 1),
             width,
             height,
             coin_positions,
@@ -62,6 +66,12 @@ impl BoardGame {
 
         let distance: Option<u32> = self.distance_to_coin_in_moved_direction(&player_move);
 
+        if let Some(distance) = distance {
+            self.update_viewing_positions(&player_move, distance);
+        } else {
+            self.view_positions.clear();
+        }
+
         Some(TurnResult::DistanceToCoinInMovingDirection(distance))
     }
 
@@ -86,59 +96,86 @@ impl BoardGame {
         }
     }
 
-    fn distance_to_coin_in_moved_direction(&self, player_move: &PlayerMove) -> Option<u32> {
-        match player_move {
-            PlayerMove::Up => {
-                for y in self.player_position.y..self.height {
-                    let current_pos = Position {x: self.player_position.x, y};
+    fn update_viewing_positions(&mut self, player_move: &PlayerMove, distance: u32) {
+        self.view_positions.clear();
 
-                    if self.coin_positions.contains(&current_pos) {
-                        let distance = y - self.player_position.y;
-                        return Some(distance);
-                    }
-                }
-            }
+        for (current_pos, current_distance) in
+            Self::direction_walker(self.width, self.height, self.player_position, player_move)
+                .take(distance as usize)
+        {
+            let view_distance = distance - current_distance;
 
-            PlayerMove::Down => {
-                for y in (0..=self.player_position.y).rev() {
-                    let current_pos = Position {x: self.player_position.x, y};
+            self.view_positions.push((current_pos, view_distance));
+        }
+    }
 
-                    if self.coin_positions.contains(&current_pos) {
-                        let distance = self.player_position.y - y;
-                        return Some(distance);
-                    }
-                }
-            }
-
-            PlayerMove::Right => {
-                for x in self.player_position.x..self.width {
-                    let current_pos = Position {x, y: self.player_position.y};
-
-                    if self.coin_positions.contains(&current_pos) {
-                        let distance = x - self.player_position.x;
-                        return Some(distance);
-                    }
-                }
-            }
-
-            PlayerMove::Left => {
-                for x in (0..=self.player_position.x).rev() {
-                    let current_pos = Position {x, y: self.player_position.y};
-
-                    if self.coin_positions.contains(&current_pos) {
-                        let distance = self.player_position.x - x;
-                        return Some(distance);
-                    }
-                }
-
+    fn distance_to_coin_in_moved_direction(&mut self, player_move: &PlayerMove) -> Option<u32> {
+        for (current_pos, distance) in
+            Self::direction_walker(self.width, self.height, self.player_position, player_move)
+        {
+            if self.coin_positions.contains(&current_pos) {
+                return Some(distance);
             }
         }
 
         None
     }
 
+    fn direction_walker(
+        width: u32,
+        height: u32,
+        player_position: Position,
+        player_move: &PlayerMove,
+    ) -> Box<dyn Iterator<Item = (Position, u32)> + '_> {
+        match player_move {
+            PlayerMove::Up => Box::new((player_position.y..height).map(move |y| {
+                (
+                    Position {
+                        x: player_position.x,
+                        y,
+                    },
+                    y - player_position.y,
+                )
+            })),
+            PlayerMove::Down => Box::new((0..=player_position.y).rev().map(move |y| {
+                (
+                    Position {
+                        x: player_position.x,
+                        y,
+                    },
+                    player_position.y - y,
+                )
+            })),
+
+            PlayerMove::Right => Box::new((player_position.x..width).map(move |x| {
+                (
+                    Position {
+                        x,
+                        y: player_position.y,
+                    },
+                    x - player_position.x,
+                )
+            })),
+            PlayerMove::Left => Box::new((0..=player_position.x).rev().map(move |x| {
+                (
+                    Position {
+                        x,
+                        y: player_position.y,
+                    },
+                    player_position.x - x,
+                )
+            })),
+        }
+    }
+
     pub fn get_board_info(&self) -> BoardInfo {
-        BoardInfo { coin_positions: self.coin_positions.to_vec(), player_position: self.player_position, width: self.width, height: self.height }
+        BoardInfo {
+            coin_positions: self.coin_positions.to_vec(),
+            view_positions: self.view_positions.to_vec(),
+            player_position: self.player_position,
+            width: self.width,
+            height: self.height,
+        }
     }
 
     fn move_player(&self, player_move: &PlayerMove) -> Option<Position> {
@@ -190,11 +227,11 @@ impl BoardGame {
 #[derive(Clone)]
 pub struct BoardInfo {
     pub coin_positions: Vec<Position>,
+    pub view_positions: Vec<(Position, u32)>,
     pub player_position: Position,
     pub height: u32,
     pub width: u32,
 }
-
 
 impl std::fmt::Display for BoardGame {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -275,10 +312,14 @@ mod tests {
         println!("{}", board_game);
     }
 
-        #[test]
+    #[test]
     fn test_game_double_distance_right() {
-        let mut board_game =
-            BoardGame::new(5, 5, vec![Position { x: 4, y: 2 }, Position { x: 3, y: 2 }], Position { x: 1, y: 2 });
+        let mut board_game = BoardGame::new(
+            5,
+            5,
+            vec![Position { x: 4, y: 2 }, Position { x: 3, y: 2 }],
+            Position { x: 1, y: 2 },
+        );
 
         let result = board_game.play_turn(PlayerMove::Right).unwrap();
 
@@ -293,7 +334,6 @@ mod tests {
 
         println!("{}", board_game);
     }
-
 
     #[test]
     fn test_game_distance_right() {

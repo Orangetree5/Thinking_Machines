@@ -1,10 +1,12 @@
-use _rust::{BoardGame, gui_integration::{Gui, board_info_to_grid}};
+use _rust::{
+    BoardGame,
+    gui_integration::{Gui, board_info_to_grid},
+};
 
 fn main() {
     let mut gui = Gui::new(5, 5);
 
-    let board_sender= gui.board_sender.clone();
-
+    let board_sender = gui.board_sender.clone();
 
     std::thread::spawn(move || {
         let mut game = BoardGame::new(5, 5, 3);
@@ -24,4 +26,3 @@ fn main() {
 
     gui.run_gui();
 }
-

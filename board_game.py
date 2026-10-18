@@ -7,16 +7,14 @@ from no_running_in_the_class_room import *
 
 def play_game(sender, game: BoardGame, agent):
     while True:
-        # Noah put your action logic here
-        agent.commit_to_memory(2+game.play_turn(agent.action))
+        action = agent.action
+        observation = 2+game.play_turn(action)
+ 
+        agent.commit_to_memory(observation)
         sender.send(game)
+
         agent.infer_past()
         agent.infer_future()
-        # 0: Up, 1: Right, 2: Down, 3: Left
-
-        # result = 0: "found coin", -1: "No coin in this direction", -2: "Invalid moving direction", n: "Distance to coin in moved direction"
-
-        #sleep(0.3) # Stop for 0.3 second
             
 def main():
     ### AGENT INITIALISATION ###

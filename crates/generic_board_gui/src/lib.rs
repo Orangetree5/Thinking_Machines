@@ -1,4 +1,5 @@
 use iced::widget::button;
+use iced::widget::text;
 use iced::widget::{
     Container,
     button::{Status, Style},
@@ -21,7 +22,28 @@ pub trait BoardReceiver<C: Cell>: Send + Sync + 'static {
 }
 
 pub trait Cell: Clone + Send + Sync + 'static {
-    fn style(&self) -> fn(&Theme, Status) -> Style;
+    fn cell_style(&self) -> CellStyle;
+}
+
+pub struct CellStyle {
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub text: String,
+}
+
+impl CellStyle {
+    fn into_style_and_text(self) -> (impl Fn(&Theme, Status) -> Style, String) {
+        (
+            (move |_, _| button::Style {
+                background: Some(iced::Background::Color(iced::Color::from_rgb(
+                    self.r, self.g, self.b,
+                ))),
+                ..Default::default()
+            }),
+            self.text,
+        )
+    }
 }
 
 pub trait BoardSender<C: Cell>: Send + Sync + 'static {}
@@ -114,7 +136,11 @@ impl<C: Cell, R: BoardReceiver<C, BoardInfo = I>, S: BoardSender<C>, I: BoardInf
 
     fn board_container(&self) -> Container<'_, Message<C, I>> {
         let height = self.currently_rendering_cells.len();
-        let width = self.currently_rendering_cells.first().map(|row| row.len()).unwrap_or(0);
+        let width = self
+            .currently_rendering_cells
+            .first()
+            .map(|row| row.len())
+            .unwrap_or(0);
 
         let mut board_layout = column![].spacing(1);
 
@@ -130,9 +156,9 @@ impl<C: Cell, R: BoardReceiver<C, BoardInfo = I>, S: BoardSender<C>, I: BoardInf
                     break;
                 };
 
-                let style = cell.style();
+                let (style, content) = cell.cell_style().into_style_and_text();
 
-                let tile_button = button("")
+                let tile_button = button(text(content))
                     .style(style)
                     .width(Length::Fixed(40.0))
                     .height(Length::Fixed(40.0));

@@ -1,47 +1,46 @@
 use board_game_engine::{BoardGame, Position};
-use tokio::sync::Mutex;
 use generic_board_gui::{BoardControllers, Cell, Gui};
-use iced::Theme;
-use iced::widget::button;
-use iced::widget::button::{Status, Style};
+use tokio::sync::Mutex;
 
 pub mod bindings;
 
 #[derive(Clone, Debug)]
 pub enum CoinCell {
     Empty,
+    CoinDistance(u32),
     Coin,
     Player,
 }
 
 impl Cell for CoinCell {
-    fn style(&self) -> fn(&Theme, Status) -> Style {
+    fn cell_style(&self) -> generic_board_gui::CellStyle {
         match self {
-            CoinCell::Coin => {
-                (|_, _| button::Style {
-                    background: Some(iced::Background::Color(iced::Color::from_rgb(
-                        0.8, 0.7, 0.0,
-                    ))),
-                    ..Default::default()
-                }) as fn(&Theme, Status) -> Style
-            }
-            CoinCell::Empty => {
-                (|_, _| button::Style {
-                    background: Some(iced::Background::Color(iced::Color::from_rgb(
-                        0.1, 0.1, 0.1,
-                    ))),
-                    ..Default::default()
-                }) as fn(&Theme, Status) -> Style
-            }
+            CoinCell::Empty => generic_board_gui::CellStyle {
+                r: 0.1,
+                g: 0.1,
+                b: 0.1,
+                text: "".to_string(),
+            },
+            CoinCell::CoinDistance(distance) => generic_board_gui::CellStyle {
+                r: 0.2,
+                g: 0.2,
+                b: 0.2,
+                text: distance.to_string(),
+            },
 
-            CoinCell::Player => {
-                (|_, _| button::Style {
-                    background: Some(iced::Background::Color(iced::Color::from_rgb(
-                        1.0, 0.0, 0.0,
-                    ))),
-                    ..Default::default()
-                }) as fn(&Theme, Status) -> Style
-            }
+            CoinCell::Coin => generic_board_gui::CellStyle {
+                r: 0.8,
+                g: 0.7,
+                b: 0.1,
+                text: "C".to_string(),
+            },
+
+            CoinCell::Player => generic_board_gui::CellStyle {
+                r: 1.0,
+                g: 0.1,
+                b: 0.1,
+                text: "P".to_string(),
+            },
         }
     }
 }
@@ -54,7 +53,7 @@ pub struct Info {
 impl Info {
     fn new(info: board_game_engine::BoardInfo) -> Self {
         Self { info }
-    } 
+    }
 }
 
 impl generic_board_gui::BoardInfo<CoinCell> for Info {
@@ -64,16 +63,25 @@ impl generic_board_gui::BoardInfo<CoinCell> for Info {
                 row.resize(self.info.width as usize, CoinCell::Empty);
             }
         }
-        grid.resize(self.info.height as usize, vec![CoinCell::Empty; self.info.width as usize]);
+        grid.resize(
+            self.info.height as usize,
+            vec![CoinCell::Empty; self.info.width as usize],
+        );
 
         for cell in grid.iter_mut().flatten() {
             *cell = CoinCell::Empty;
         }
-    
+
         for coin_pos in &self.info.coin_positions {
             let Position { x, y } = *coin_pos;
 
             grid[y as usize][x as usize] = CoinCell::Coin;
+        }
+
+        for (view_pos, distance) in &self.info.view_positions {
+            let Position { x, y } = *view_pos;
+
+            grid[y as usize][x as usize] = CoinCell::CoinDistance(*distance);
         }
 
         let Position { x, y } = self.info.player_position;
@@ -88,9 +96,7 @@ pub struct BoardReceiver {
 impl generic_board_gui::BoardReceiver<CoinCell> for BoardReceiver {
     type BoardInfo = Info;
 
-    async fn recv_board_state(
-        &self,
-    ) -> Option<Info> {
+    async fn recv_board_state(&self) -> Option<Info> {
         let mut lock = self.receiver.lock().await;
 
         lock.recv().await
@@ -114,7 +120,9 @@ impl BoardController {
         let (sender, receiver) = tokio::sync::mpsc::channel(1);
 
         let sender = BoardSender { sender };
-        let receiver = BoardReceiver { receiver: Mutex::new(receiver)};
+        let receiver = BoardReceiver {
+            receiver: Mutex::new(receiver),
+        };
 
         Self { receiver, sender }
     }
@@ -125,4 +133,3 @@ impl BoardControllers<CoinCell, BoardReceiver, BoardSender> for BoardController 
         (self.sender, self.receiver)
     }
 }
-

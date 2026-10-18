@@ -13,7 +13,6 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 tokio = { version = "1.53.2", features = ["sync"] }
-iced = { version = "0.14" }
 board_game_engine = {path = "../../crates/board_game_engine"}
 generic_board_gui = { path = "../../crates/generic_board_gui"}
 pyo3 = "0.29.3"
