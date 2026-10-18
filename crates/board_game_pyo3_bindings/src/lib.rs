@@ -22,7 +22,7 @@ impl BoardGamePy {
         Self { game }
     }
 
-    pub fn play_turn(&mut self, player_move: u32) -> i32 {
+    pub fn play_turn(&mut self, player_move: u32) -> u32 {
         let player_move = encode_player_move(player_move);
 
         let result = self.game.play_turn(player_move);
@@ -30,14 +30,13 @@ impl BoardGamePy {
         if let Some(result) = result {
             decode_turn_result(result)
         } else {
-            -2
+            0
         }
     }
 
     fn __str__(&self) -> String {
         self.game.to_string()
-    }
-}
+    } }
 
 fn encode_player_move(number: u32) -> PlayerMove {
     match number {
@@ -49,12 +48,12 @@ fn encode_player_move(number: u32) -> PlayerMove {
     }
 }
 
-fn decode_turn_result(turn_result: TurnResult) -> i32 {
+fn decode_turn_result(turn_result: TurnResult) -> u32 {
     match turn_result {
-        TurnResult::CoinFound => 0,
+        TurnResult::CoinFound => 2,
         TurnResult::DistanceToCoinInMovingDirection(distance) => match distance {
-            None => -1,
-            Some(distance) => distance as i32,
+            None => 1,
+            Some(distance) => distance + 2,
         },
     }
 }

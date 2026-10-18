@@ -22,12 +22,12 @@ def main():
     amount_of_observations = 20
     amount_of_actions = 4
     short_term_memory = 500
-    planning_horizon = 3
+    planning_horizon = 2
 
     agent = ActInfAgent_02(amount_of_states, amount_of_observations, amount_of_actions, short_term_memory,
                            planning_horizon)
 
-    agent.initialise_preferences(0, -5)
+    agent.initialise_preferences(0, -7)
     agent.initialise_preferences(1, -5)
     agent.initialise_preferences(2, 5)
     for index in range(3, amount_of_observations):
@@ -39,7 +39,7 @@ def main():
 
     board_sender = gui.board_sender
 
-    game = BoardGame(width=amount_of_observations-2, height=amount_of_observations-2, number_of_coins=3)
+    game = BoardGame(width=amount_of_observations-2, height=amount_of_observations-2, number_of_coins=5)
     print(str(game))
 
     # This executes the play_game function in parallel, if you are lost let LLM explain

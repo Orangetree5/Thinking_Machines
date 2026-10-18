@@ -58,8 +58,8 @@ impl BoardGame {
 
         if let Some(index) = index_coin_to_remove {
             self.coin_positions.remove(index);
-
             self.coin_positions.push(self.unique_random_position());
+            self.view_positions.clear();
 
             return Some(TurnResult::CoinFound);
         }
