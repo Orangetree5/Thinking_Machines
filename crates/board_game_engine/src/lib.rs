@@ -13,6 +13,7 @@ pub struct BoardGame {
     player_position: Position,
 
     tps: Tps,
+    coins_found: u64,
 }
 
 impl BoardGame {
@@ -31,6 +32,7 @@ impl BoardGame {
             coin_positions,
             player_position,
             tps: Tps::new(),
+            coins_found: 0,
         }
     }
 
@@ -69,6 +71,7 @@ impl BoardGame {
             self.coin_positions.remove(index);
             self.coin_positions.push(self.unique_random_position());
             self.view_positions.clear();
+            self.coins_found += 1;
 
             return Some(TurnResult::CoinFound);
         }
@@ -190,9 +193,10 @@ impl BoardGame {
         let average_tps = self.tps.average_tps();
 
         print!(
-            "\rCurrent TPS: {:.2}, Average TPS: {:.2}, Total time elapsed: {}",
+            "\rCurrent TPS: {:.2}, Average TPS: {:.2}, Total Turns: {}, Total time elapsed: {}",
             current_tps,
             average_tps,
+            self.tps.total_turns(),
             format_duration(self.tps.total_time_elapsed())
         );
 

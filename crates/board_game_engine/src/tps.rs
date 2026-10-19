@@ -45,4 +45,8 @@ impl Tps {
     pub fn total_time_elapsed(&self) -> std::time::Duration {
         self.current_time.unwrap().duration_since(self.start_time)
     }
+
+    pub fn total_turns(&self) -> u64 {
+        self.total_number_of_turns
+    }
 }

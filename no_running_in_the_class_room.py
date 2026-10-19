@@ -2,9 +2,7 @@ import torch
 import torch.nn.functional as F
 import random
 from torch.distributions import Dirichlet
-import matplotlib.pyplot as plt
 import numpy as np
-import pygame
 
 
 
@@ -67,6 +65,72 @@ class ActInfAgent_02:
                 self._prior_likelihood.concentration += self._joint_state_observation[0]
                 self._prior_transition.concentration[self._action_history[0]] += self._joint_state_state[0]
 
+    def infer_past_faster(self, convergence_criteria=0.001, upper_limit=1000):
+        prev_vfe = float("inf")
+        past_observations = F.one_hot(self._observation_history, num_classes=self._amount_of_observations)
+
+        # Pre-compute constant KL divergences outside the loop if they don't change per-iteration
+        kl_likelihood = torch.distributions.kl_divergence(self._posterior_likelihood, self._prior_likelihood).sum()
+        kl_transition = torch.distributions.kl_divergence(self._posterior_transition, self._prior_transition).sum()
+        constant_kl = kl_likelihood + kl_transition
+
+        num_steps = self._past_state.size(0)
+        num_states = self._amount_of_states
+
+        for index in range(upper_limit):
+            # 1. Compute likelihood/transition ONCE per outer iteration
+            mean_log_likelihood = torch.digamma(self._posterior_likelihood.concentration) - torch.digamma(
+                self._posterior_likelihood.concentration.sum(dim=-1, keepdim=True))
+            mean_log_transition = torch.digamma(
+                self._posterior_transition.concentration[self._action_history]) - torch.digamma(
+                self._posterior_transition.concentration[self._action_history].sum(dim=-1, keepdim=True))
+            likelihood = torch.exp(mean_log_likelihood)
+            transition = torch.exp(mean_log_transition)
+
+            forward_message = torch.softmax(torch.zeros(num_steps, num_states, device=self._past_state.device), dim=-1)
+            backward_message = torch.softmax(torch.zeros(num_steps, num_states, device=self._past_state.device), dim=-1)
+
+            for t in range(1, num_steps):
+                forward_message[t] = likelihood[:, self._observation_history[t-1]] * (torch.einsum('ij, i -> j', transition[t-1], forward_message[t-1]))
+                backward_message[-(t+1)] = torch.einsum('ij, j -> i', transition[-t], likelihood[:, self._observation_history[-t]] * backward_message[-t])
+
+                forward_message[t] = forward_message[t] / forward_message[t].sum().clamp(min=1e-8)
+                backward_message[-(t+1)] = backward_message[-(t+1)] / backward_message[-(t+1)].sum().clamp(min=1e-8)
+
+            past_state_unnormalised = torch.einsum('ts, ts -> ts', forward_message, backward_message)
+            self._past_state = past_state_unnormalised / past_state_unnormalised.sum(dim=-1, keepdim=True)
+            self._joint_state_observation = torch.einsum('to, ts -> tso', past_observations, self._past_state[1:])
+            
+            joint_state_state_unnormalised = torch.einsum('tij, tj -> tij', torch.einsum('ti, tij, jt -> tij', forward_message[:-1], transition, likelihood[:, self._observation_history]), backward_message[1:])
+            self._joint_state_state = joint_state_state_unnormalised / joint_state_state_unnormalised.sum(dim=(-1, -2), keepdim=True)
+            
+            self.infer_parameters()
+
+            # ##### VFE CONVERGENCE CHECK #####
+            # Recompute likelihood/transition using the updated parameters from infer_parameters()
+            mean_log_likelihood = torch.digamma(self._posterior_likelihood.concentration) - torch.digamma(
+                self._posterior_likelihood.concentration.sum(dim=-1, keepdim=True))
+            mean_log_transition = torch.digamma(
+                self._posterior_transition.concentration[self._action_history]) - torch.digamma(
+                self._posterior_transition.concentration[self._action_history].sum(dim=-1, keepdim=True))
+
+            state_negative_entropy_time = (self._joint_state_state * (self._joint_state_state.clamp(min=1e-8).log() - self._past_state[:-1, :, None].clamp(min=1e-8).log())).sum(dim=(-1, -2))
+            state_negative_entropy_time[0] += (self._past_state[0] * self._past_state[0].clamp(min=1e-8).log()).sum()
+
+            variational_free_energy_time = (
+                state_negative_entropy_time 
+                - torch.einsum('tso, so -> t', self._joint_state_observation, mean_log_likelihood) 
+                - torch.einsum('tji, tji -> t', self._joint_state_state, mean_log_transition)
+            )
+
+            variational_free_energy = variational_free_energy_time.sum(dim=-1) + constant_kl
+
+            if abs(prev_vfe - variational_free_energy.item()) < convergence_criteria:
+                break
+            prev_vfe = variational_free_energy.item()
+
+        self.infer_parameters(commit=True)
+
     def infer_past(self, convergence_criteria=0.001, upper_limit=1000):
         prev_vfe = float("inf")
         past_observations = F.one_hot(self._observation_history, num_classes=self._amount_of_observations)
@@ -126,12 +190,53 @@ class ActInfAgent_02:
 
         self.infer_parameters(commit=True)
 
+    def infer_future_faster(self):
+        likelihood = self._posterior_likelihood.mean
+        transition = self._posterior_transition.mean[self._all_action_sequences]
+        
+        # Initialize the first time step
+        self._future_state[:, 0] = torch.einsum('pij, i -> pj', transition[:, 0], self._past_state[-1])
+
+        # Rollout future states across the planning horizon
+        # (If transition tensors vary per time step, a loop is required, but we optimize execution)
+        for time in range(1, self._planning_horizon):
+            self._future_state[:, time] = torch.einsum('pij, pi -> pj', transition[:, time], self._future_state[:, time-1])
+
+        self._future_observation = torch.einsum('so, pts -> pto', likelihood, self._future_state)
+
+        ##### EXPECTED FREE ENERGY #####
+        joint_state_observation_policy = torch.einsum('so, pts -> ptso', likelihood, self._future_state)
+
+        # Using the streamlined DeepSeek suggestion (which avoids computing missing joint transition terms)
+        log_future_obs = torch.log(self._future_observation.clamp(min=1e-8))
+        log_prior_obs = torch.log(self._prior_future_observation.clamp(min=1e-8))
+        
+        # Pre-compute mean_log_likelihood only if needed for the einsum
+        mean_log_likelihood = torch.digamma(self._posterior_likelihood.concentration) - torch.digamma(
+            self._posterior_likelihood.concentration.sum(dim=-1, keepdim=True))
+
+        expected_free_energy_policy_time = (
+            (self._future_observation * log_future_obs).sum(dim=-1)
+            - (self._future_observation * log_prior_obs).sum(dim=-1)
+            - torch.einsum('ptso, so -> pt', joint_state_observation_policy, mean_log_likelihood)
+        )
+
+        expected_free_energy_policy = expected_free_energy_policy_time.sum(dim=-1)
+
+        # Policy update and selection
+        self._posterior_policy = torch.softmax(
+            torch.log(self._prior_policy.clamp(min=1e-8)) - expected_free_energy_policy, dim=-1
+        )
+        
+        self._chosen_policy = torch.multinomial(self._posterior_policy, num_samples=1).item()
+        self.action = self._all_action_sequences[int(self._chosen_policy)][0]
+
     def infer_future(self):
         mean_log_likelihood = torch.digamma(self._posterior_likelihood.concentration) - torch.digamma(
             self._posterior_likelihood.concentration.sum(dim=-1, keepdim=True))
-        mean_log_transition = torch.digamma(
-            self._posterior_transition.concentration[self._all_action_sequences]) - torch.digamma(
-            self._posterior_transition.concentration[self._all_action_sequences].sum(dim=-1, keepdim=True))
+#        mean_log_transition = torch.digamma(
+            #self._posterior_transition.concentration[self._all_action_sequences]) - torch.digamma(
+            #self._posterior_transition.concentration[self._all_action_sequences].sum(dim=-1, keepdim=True))
         likelihood = self._posterior_likelihood.mean
         transition = self._posterior_transition.mean[self._all_action_sequences]
         self._future_state[:,0] = torch.einsum('pij, i -> pj', transition[:,0], self._past_state[-1])
@@ -142,7 +247,7 @@ class ActInfAgent_02:
 
         ##### EXPECTED FREE ENERGY #####
         joint_state_observation_policy = torch.einsum('so, pts -> ptso', likelihood, self._future_state)
-        joint_state_state_policy = torch.einsum('pti, ptij -> ptij', torch.cat([self._past_state[-1].unsqueeze(0).unsqueeze(0).expand(self._amount_of_policies, 1, -1), self._future_state[:,:-1]], dim=1), transition)
+        #joint_state_state_policy = torch.einsum('pti, ptij -> ptij', torch.cat([self._past_state[-1].unsqueeze(0).unsqueeze(0).expand(self._amount_of_policies, 1, -1), self._future_state[:,:-1]], dim=1), transition)
 
 #        expected_free_energy_policy_time = -((joint_state_state_policy * torch.log(
 #                transition.clamp(min=1e-8))).sum(dim=(-1, -2)) + (self._future_observation * torch.log(

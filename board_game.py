@@ -1,5 +1,3 @@
-from time import sleep
-import traceback
 from thinking_machines import BoardGame, Gui
 import threading
 from no_running_in_the_class_room import *
@@ -13,17 +11,17 @@ def play_game(sender, game: BoardGame, agent):
         agent.commit_to_memory(observation)
         sender.send(game)
 
-        agent.infer_past()
-        agent.infer_future()
+        agent.infer_past_faster()
+        agent.infer_future_faster()
             
 def main():
     ### AGENT INITIALISATION ###
-    amount_of_states = 6
+    amount_of_states = 8
     amount_of_observations = 20
     amount_of_actions = 4
-    short_term_memory = 1000
+    short_term_memory = 1500
     planning_horizon = 3
-    forgetfulness = 0.005
+    forgetfulness = 0
 
     agent = ActInfAgent_02(amount_of_states, amount_of_observations, amount_of_actions, short_term_memory,
                            planning_horizon, forgetfulness)
