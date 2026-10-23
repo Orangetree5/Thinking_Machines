@@ -1,6 +1,7 @@
 from thinking_machines import BoardGame, Gui
 import threading
 from no_running_in_the_class_room import *
+from time import sleep
 
 
 def play_game(sender, game: BoardGame, agent):
@@ -36,13 +37,13 @@ def main():
 
     gui = Gui()
 
-    board_sender = gui.board_sender
+    game_sender = gui.game_sender
 
     game = BoardGame(width=amount_of_observations-2, height=amount_of_observations-2, number_of_coins=3)
     print(str(game))
 
     # This executes the play_game function in parallel, if you are lost let LLM explain
-    t = threading.Thread(target=play_game, args=(board_sender, game, agent))
+    t = threading.Thread(target=play_game, args=(game_sender, game, agent))
 
     t.start()
 

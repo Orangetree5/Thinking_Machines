@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use rand::{RngExt, rngs::ThreadRng};
 
 use crate::tps::Tps;
@@ -180,35 +182,28 @@ impl BoardGame {
         }
     }
 
-    pub fn get_board_info(&self) -> BoardInfo {
-        fn format_duration(d: std::time::Duration) -> String {
-            let total_secs = d.as_secs();
-            let minutes = total_secs / 60;
-            let seconds = total_secs % 60;
-
-            format!("{:02}:{:02}", minutes, seconds)
-        }
-
+    pub fn get_game_info(&self) -> GameInfo {
         let current_tps = self.tps.current_tps();
         let average_tps = self.tps.average_tps();
+        let time_elapsed = self.tps.total_time_elapsed();
+        let turns_played = self.tps.total_turns();
 
-        print!(
-            "\rCurrent TPS: {:.2}, Average TPS: {:.2}, Total Turns: {}, Total time elapsed: {}",
-            current_tps,
+        let stats = Stats {
+            turns_played,
+            time_elapsed,
             average_tps,
-            self.tps.total_turns(),
-            format_duration(self.tps.total_time_elapsed())
-        );
-
-        BoardInfo {
+            coins_found: self.coins_found,
+            current_tps,
+        };
+        let board_info = BoardInfo {
             coin_positions: self.coin_positions.to_vec(),
             view_positions: self.view_positions.to_vec(),
             player_position: self.player_position,
-            current_tps,
-            average_tps,
             width: self.width,
             height: self.height,
-        }
+        };
+
+        GameInfo { board_info, stats }
     }
 
     fn move_player(&self, player_move: &PlayerMove) -> Option<Position> {
@@ -258,12 +253,26 @@ impl BoardGame {
 }
 
 #[derive(Clone)]
+pub struct GameInfo {
+    pub board_info: BoardInfo,
+    pub stats: Stats,
+}
+
+#[derive(Clone)]
+pub struct Stats {
+    pub current_tps: f32,
+    pub average_tps: f32,
+    pub turns_played: u64,
+    pub coins_found: u64,
+    pub time_elapsed: Duration,
+}
+
+#[derive(Clone)]
 pub struct BoardInfo {
     pub coin_positions: Vec<Position>,
     pub view_positions: Vec<(Position, u32)>,
     pub player_position: Position,
-    pub current_tps: f32,
-    pub average_tps: f32,
+
     pub height: u32,
     pub width: u32,
 }

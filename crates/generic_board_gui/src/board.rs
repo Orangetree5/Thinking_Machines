@@ -1,9 +1,6 @@
-use iced::widget::button;
-use iced::widget::{
-    button::{Status, Style},
-};
 use iced::Theme;
-
+use iced::widget::button;
+use iced::widget::button::{Status, Style};
 
 pub trait BoardInfo<C: Cell>: Clone + Send + 'static {
     fn update_grid_inplace(&self, grid: &mut Vec<Vec<C>>);
@@ -28,7 +25,7 @@ pub struct CellStyle {
 }
 
 impl CellStyle {
-    fn into_style_and_text(self) -> (impl Fn(&Theme, Status) -> Style, String) {
+    pub(crate) fn into_style_and_text(self) -> (impl Fn(&Theme, Status) -> Style, String) {
         (
             (move |_, _| button::Style {
                 background: Some(iced::Background::Color(iced::Color::from_rgb(
@@ -40,11 +37,3 @@ impl CellStyle {
         )
     }
 }
-
-pub trait BoardSender<C: Cell>: Send + Sync + 'static {}
-
-pub trait BoardControllers<C: Cell, R: BoardReceiver<C>, S: BoardSender<C>> {
-    fn board_controllers(self) -> (S, R);
-}
-
-
