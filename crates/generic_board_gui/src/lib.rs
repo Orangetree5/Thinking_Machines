@@ -1,67 +1,52 @@
 use iced::widget::button;
 use iced::widget::text;
-use iced::widget::{
-    Container,
-    button::{Status, Style},
-    column, container, row,
-};
-use iced::{Alignment, Length, Subscription, Theme};
+use iced::widget::{Container, column, container, row};
+use iced::{Alignment, Length, Subscription};
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub trait BoardInfo<C: Cell>: Clone + Send + 'static {
-    fn update_grid_inplace(&self, grid: &mut Vec<Vec<C>>);
-}
+use crate::board::BoardInfo;
+use crate::board::BoardReceiver;
+use crate::board::Cell;
+use crate::stats::TextContentReceiver;
+use crate::stats::TextInfo;
 
-pub trait BoardReceiver<C: Cell>: Send + Sync + 'static {
-    type BoardInfo: BoardInfo<C>;
+pub mod board;
+pub mod stats;
 
-    fn recv_board_state(&self)
-    -> impl std::future::Future<Output = Option<Self::BoardInfo>> + Send;
-}
-
-pub trait Cell: Clone + Send + Sync + 'static {
-    fn cell_style(&self) -> CellStyle;
-}
-
-pub struct CellStyle {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub text: String,
-}
-
-impl CellStyle {
-    fn into_style_and_text(self) -> (impl Fn(&Theme, Status) -> Style, String) {
-        (
-            (move |_, _| button::Style {
-                background: Some(iced::Background::Color(iced::Color::from_rgb(
-                    self.r, self.g, self.b,
-                ))),
-                ..Default::default()
-            }),
-            self.text,
-        )
-    }
-}
-
-pub trait BoardSender<C: Cell>: Send + Sync + 'static {}
-
-pub trait BoardControllers<C: Cell, R: BoardReceiver<C>, S: BoardSender<C>> {
-    fn board_controllers(self) -> (S, R);
-}
-
-pub struct Gui<C: Cell, R: BoardReceiver<C, BoardInfo = I>, S: BoardSender<C>, I: BoardInfo<C>> {
+pub struct Gui<
+    const N: usize,
+    C: Cell,
+    R: BoardReceiver<C, BoardInfo = I>,
+    I: BoardInfo<C>,
+    TC: TextContentReceiver<N>,
+> {
     board_receiver: Arc<R>,
-    _sender: PhantomData<S>,
+    text_receiver: Arc<TC>,
 
     currently_rendering_cells: Vec<Vec<C>>,
+    text_info: [String; N],
 }
 
-impl<C: Cell, R: BoardReceiver<C, BoardInfo = I>, S: BoardSender<C>, I: BoardInfo<C>>
-    Gui<C, R, S, I>
+impl<
+    const N: usize,
+    C: Cell,
+    R: BoardReceiver<C, BoardInfo = I>,
+    I: BoardInfo<C>,
+    TC: TextContentReceiver<N, TextContent = T>,
+    T: TextInfo<N>,
+> Gui<N, C, R, I, TC>
 {
+    pub fn new(board_receiver: R, text_receiver: TC) -> Self {
+        Self {
+            board_receiver: Arc::new(board_receiver),
+            text_receiver: Arc::new(text_receiver),
+            currently_rendering_cells: Vec::new(),
+            text_info: [const {String::new()}; N],
+        }
+    }
+
     pub fn run_gui(self) -> ! {
         let s = RefCell::new(Some(self));
 
@@ -72,27 +57,14 @@ impl<C: Cell, R: BoardReceiver<C, BoardInfo = I>, S: BoardSender<C>, I: BoardInf
         };
 
         iced::application(gui_new, Gui::update, Gui::view)
-            .subscription(Gui::subscription)
+            .subscription(Gui::all_subscriptions)
             .run()
             .unwrap();
 
         unreachable!()
     }
 
-    pub fn new(board_controllers: impl BoardControllers<C, R, S>) -> (Self, S) {
-        let (sender, board_receiver) = board_controllers.board_controllers();
-
-        (
-            Self {
-                board_receiver: Arc::new(board_receiver),
-                currently_rendering_cells: Vec::new(),
-                _sender: PhantomData,
-            },
-            sender,
-        )
-    }
-
-    pub fn update(&mut self, message: Message<C, I>) {
+    pub fn update(&mut self, message: Message<N, C, I, T>) {
         match message {
             Message::NewBoardInfo(new_cells) => {
                 let old_cells = &mut self.currently_rendering_cells;
@@ -100,11 +72,20 @@ impl<C: Cell, R: BoardReceiver<C, BoardInfo = I>, S: BoardSender<C>, I: BoardInf
                 new_cells.update_grid_inplace(old_cells);
             }
 
+            Message::NewTextInfo(new_text) => {
+                println!("Got new text!");
+                self.text_info = new_text.content();
+            }
+
             Message::_Cell(_) => unreachable!(),
         }
     }
 
-    pub fn subscription(&self) -> Subscription<Message<C, I>> {
+    fn all_subscriptions(&self) -> Subscription<Message<N, C, I, T>> {
+        Subscription::batch([self.board_subscription(), self.text_content_subscription()])
+    }
+
+    fn board_subscription(&self) -> Subscription<Message<N, C, I, T>> {
         pub struct BoardReceiverHashable<C: Cell, R: BoardReceiver<C>>(Arc<R>, PhantomData<C>);
         impl<C: Cell, R: BoardReceiver<C>> std::hash::Hash for BoardReceiverHashable<C, R> {
             fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -128,13 +109,52 @@ impl<C: Cell, R: BoardReceiver<C, BoardInfo = I>, S: BoardSender<C>, I: BoardInf
         })
     }
 
-    pub fn view(&self) -> iced::Element<'_, Message<C, I>> {
-        let board = self.board_container();
+    fn text_content_subscription(&self) -> Subscription<Message<N, C, I, T>> {
+        pub struct TextContentReceiverHashable<const N: usize, TC: TextContentReceiver<N>>(Arc<TC>);
+        impl<const N: usize, TC: TextContentReceiver<N>> std::hash::Hash
+            for TextContentReceiverHashable<N, TC>
+        {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                std::ptr::hash(Arc::as_ptr(&self.0), state);
+            }
+        }
 
-        board.into()
+        let text_receiver = TextContentReceiverHashable(Arc::clone(&self.text_receiver));
+
+        Subscription::run_with(text_receiver, |text_receiver| {
+            let TextContentReceiverHashable(text_receiver) = text_receiver;
+            let text_receiver = Arc::clone(text_receiver);
+
+            async_stream::stream! {
+                loop {
+                    if let Some(text_info) = text_receiver.recv_text_content().await {
+                        yield Message::NewTextInfo(text_info)
+                    }
+                }
+            }
+        })
     }
 
-    fn board_container(&self) -> Container<'_, Message<C, I>> {
+    pub fn view(&self) -> iced::Element<'_, Message<N, C, I, T>> {
+        let board = self.board_container();
+        let text_row = self.text_row();
+
+        row![text_row, board].into()
+    }
+
+    fn text_row(&self) -> Container<'_, Message<N, C, I, T>> {
+        let mut text_column = column![].spacing(1);
+
+        println!("{:?}", self.text_info);
+
+        for t in &self.text_info {
+            text_column = text_column.push(text(t));
+        }
+
+        container(text_column)
+    }
+
+    fn board_container(&self) -> Container<'_, Message<N, C, I, T>> {
         let height = self.currently_rendering_cells.len();
         let width = self
             .currently_rendering_cells
@@ -178,8 +198,9 @@ impl<C: Cell, R: BoardReceiver<C, BoardInfo = I>, S: BoardSender<C>, I: BoardInf
 }
 
 #[derive(Debug, Clone)]
-pub enum Message<C: Cell, I: BoardInfo<C>> {
+pub enum Message<const N: usize, C: Cell, I: BoardInfo<C>, T: TextInfo<N>> {
     NewBoardInfo(I),
+    NewTextInfo(T),
 
     _Cell(PhantomData<C>),
 }

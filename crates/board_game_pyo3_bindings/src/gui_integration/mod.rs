@@ -1,6 +1,9 @@
-use board_game_engine::{BoardGame, Position};
-use generic_board_gui::{BoardControllers, Cell, Gui};
+use std::time::Duration;
+
+use board_game_engine::Position;
+use generic_board_gui::board::{Cell, CellStyle};
 use tokio::sync::Mutex;
+use tokio::sync::mpsc::channel;
 
 pub mod bindings;
 
@@ -13,29 +16,29 @@ pub enum CoinCell {
 }
 
 impl Cell for CoinCell {
-    fn cell_style(&self) -> generic_board_gui::CellStyle {
+    fn cell_style(&self) -> generic_board_gui::board::CellStyle {
         match self {
-            CoinCell::Empty => generic_board_gui::CellStyle {
+            CoinCell::Empty => CellStyle {
                 r: 0.1,
                 g: 0.1,
                 b: 0.1,
                 text: "".to_string(),
             },
-            CoinCell::CoinDistance(distance) => generic_board_gui::CellStyle {
+            CoinCell::CoinDistance(distance) => CellStyle {
                 r: 0.2,
                 g: 0.2,
                 b: 0.2,
                 text: distance.to_string(),
             },
 
-            CoinCell::Coin => generic_board_gui::CellStyle {
+            CoinCell::Coin => CellStyle {
                 r: 0.8,
                 g: 0.7,
                 b: 0.1,
                 text: "".to_string(),
             },
 
-            CoinCell::Player => generic_board_gui::CellStyle {
+            CoinCell::Player => CellStyle {
                 r: 1.0,
                 g: 0.1,
                 b: 0.1,
@@ -46,17 +49,17 @@ impl Cell for CoinCell {
 }
 
 #[derive(Clone)]
-pub struct Info {
+pub struct BoardInfo {
     info: board_game_engine::BoardInfo,
 }
 
-impl Info {
+impl BoardInfo {
     fn new(info: board_game_engine::BoardInfo) -> Self {
         Self { info }
     }
 }
 
-impl generic_board_gui::BoardInfo<CoinCell> for Info {
+impl generic_board_gui::board::BoardInfo<CoinCell> for BoardInfo {
     fn update_grid_inplace(&self, grid: &mut Vec<Vec<CoinCell>>) {
         if grid.len() != self.info.height as usize {
             for row in grid.iter_mut() {
@@ -89,14 +92,91 @@ impl generic_board_gui::BoardInfo<CoinCell> for Info {
     }
 }
 
-pub struct BoardReceiver {
-    receiver: Mutex<tokio::sync::mpsc::Receiver<Info>>,
+#[derive(Clone)]
+pub struct Stats {
+    current_tps: f32,
+    average_tps: f32,
+    turns_played: u64,
+    coins_found: u64,
+    time_elapsed: Duration,
 }
 
-impl generic_board_gui::BoardReceiver<CoinCell> for BoardReceiver {
-    type BoardInfo = Info;
+impl Stats {
+    fn new(game_stats: board_game_engine::Stats) -> Self {
+        let board_game_engine::Stats {
+            coins_found,
+            current_tps,
+            average_tps,
+            time_elapsed,
+            turns_played,
+        } = game_stats;
 
-    async fn recv_board_state(&self) -> Option<Info> {
+        Self {
+            current_tps,
+            average_tps,
+            turns_played,
+            coins_found,
+            time_elapsed,
+        }
+    }
+}
+
+pub const N: usize = 5;
+
+impl generic_board_gui::stats::TextInfo<N> for Stats {
+    fn content(self) -> [String; N] {
+        fn format_duration(d: std::time::Duration) -> String {
+            let total_secs = d.as_secs();
+            let minutes = total_secs / 60;
+            let seconds = total_secs % 60;
+
+            format!("{:02}:{:02}", minutes, seconds)
+        }
+
+        [
+            format!("Current TPS: {}", self.current_tps),
+            format!("Average TPS: {}", self.average_tps),
+            format!("Coins found: {}", self.coins_found),
+            format!("Total number of turns played: {}", self.turns_played),
+            format!("Total minutes played: {}", format_duration(self.time_elapsed))
+        ]
+    }
+}
+
+pub struct StatsReceiver {
+    receiver: Mutex<tokio::sync::mpsc::Receiver<Stats>>,
+}
+
+impl generic_board_gui::stats::TextContentReceiver<N> for StatsReceiver {
+    type TextContent = Stats;
+
+    async fn recv_text_content(&self) -> Option<Stats> {
+        let mut lock = self.receiver.lock().await;
+
+        lock.recv().await
+    }
+}
+
+#[derive(Clone)]
+pub struct StatsSender {
+    sender: tokio::sync::mpsc::Sender<Stats>,
+}
+
+fn stats_controller() -> (StatsSender, StatsReceiver) {
+    let (sender, receiver) = channel(1);
+    let receiver = Mutex::new(receiver);
+
+    (StatsSender { sender }, StatsReceiver { receiver })
+}
+
+pub struct BoardReceiver {
+    receiver: Mutex<tokio::sync::mpsc::Receiver<BoardInfo>>,
+}
+
+impl generic_board_gui::board::BoardReceiver<CoinCell> for BoardReceiver {
+    type BoardInfo = BoardInfo;
+
+    async fn recv_board_state(&self) -> Option<BoardInfo> {
         let mut lock = self.receiver.lock().await;
 
         lock.recv().await
@@ -105,31 +185,16 @@ impl generic_board_gui::BoardReceiver<CoinCell> for BoardReceiver {
 
 #[derive(Clone)]
 pub struct BoardSender {
-    sender: tokio::sync::mpsc::Sender<Info>,
+    sender: tokio::sync::mpsc::Sender<BoardInfo>,
 }
 
-impl generic_board_gui::BoardSender<CoinCell> for BoardSender {}
+fn board_controller() -> (BoardSender, BoardReceiver) {
+    let (sender, receiver) = tokio::sync::mpsc::channel(1);
 
-pub struct BoardController {
-    receiver: BoardReceiver,
-    sender: BoardSender,
-}
+    let sender = BoardSender { sender };
+    let receiver = BoardReceiver {
+        receiver: Mutex::new(receiver),
+    };
 
-impl BoardController {
-    fn new() -> Self {
-        let (sender, receiver) = tokio::sync::mpsc::channel(1);
-
-        let sender = BoardSender { sender };
-        let receiver = BoardReceiver {
-            receiver: Mutex::new(receiver),
-        };
-
-        Self { receiver, sender }
-    }
-}
-
-impl BoardControllers<CoinCell, BoardReceiver, BoardSender> for BoardController {
-    fn board_controllers(self) -> (BoardSender, BoardReceiver) {
-        (self.sender, self.receiver)
-    }
+    (sender, receiver)
 }
